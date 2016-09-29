@@ -25,17 +25,14 @@
 #include "env/IO.hpp"
 
 
-namespace Ruby
-{
-
-IlGeneratorMethodDetails::IlGeneratorMethodDetails(TR_ResolvedMethod *method) :
+Ruby::IlGeneratorMethodDetails::IlGeneratorMethodDetails(TR_ResolvedMethod *method) :
    _method(static_cast<ResolvedRubyMethod *>(method))
    {
    }
 
 
 TR_IlGenerator *
-IlGeneratorMethodDetails::getIlGenerator(
+Ruby::IlGeneratorMethodDetails::getIlGenerator(
       TR::ResolvedMethodSymbol *methodSymbol,
       TR_FrontEnd * fe,
       TR::Compilation *comp,
@@ -54,7 +51,7 @@ IlGeneratorMethodDetails::getIlGenerator(
 
 
 void
-IlGeneratorMethodDetails::print(TR_FrontEnd *fe, TR::FILE *file)
+Ruby::IlGeneratorMethodDetails::print(TR_FrontEnd *fe, TR::FILE *file)
    {
    if (file == NULL)
       return;
@@ -64,10 +61,8 @@ IlGeneratorMethodDetails::print(TR_FrontEnd *fe, TR::FILE *file)
 
 
 bool
-IlGeneratorMethodDetails::sameAs(TR::IlGeneratorMethodDetails & other, TR_FrontEnd *fe)
+Ruby::IlGeneratorMethodDetails::sameAs(TR::IlGeneratorMethodDetails & other, TR_FrontEnd *fe)
    {
    return self()->getMethod() == other.getMethod();
    }
-
-}
 
