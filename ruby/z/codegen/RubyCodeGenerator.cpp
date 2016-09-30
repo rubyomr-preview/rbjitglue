@@ -22,19 +22,14 @@
 #include "compile/Compilation.hpp"
 #include "env/CompilerEnv.hpp"
 
-namespace Ruby
-{
-namespace Z
-{
-
-CodeGenerator::CodeGenerator() :
+Ruby::Z::CodeGenerator::CodeGenerator() :
    OMR::CodeGeneratorConnector()
    {
    }
 
 
 TR::Linkage *
-CodeGenerator::createLinkage(TR_LinkageConventions lc)
+Ruby::Z::CodeGenerator::createLinkage(TR_LinkageConventions lc)
    {
    // *this    swipeable for debugging purposes
    bool lockLitPoolRegister = false;
@@ -81,5 +76,3 @@ CodeGenerator::createLinkage(TR_LinkageConventions lc)
    return linkage;
    }
 
-} // namespace Z
-} // namespace Ruby
