@@ -51,14 +51,14 @@ class SymbolReferenceTable : public OMR::SymbolReferenceTableConnector
 
    void initializeRubyHelperSymbolRefs(uint32_t maxIndex);
    TR::SymbolReference * findOrCreateRubyHelperSymbolRef(TR_RuntimeHelper helper, bool canGCandReturn, bool canGCandExcept, bool preservesAllRegisters);
-   TR::SymbolReference * createRubyNamedShadowSymRef(char* name, TR::DataTypes dt, size_t size, int32_t offset, bool killedAcrossCalls);
-   TR::SymbolReference * createRubyNamedStaticSymRef(char* name, TR::DataTypes dt, void* addr,  int32_t offset, bool killedAcrossCalls);
+   TR::SymbolReference * createRubyNamedShadowSymRef(char* name, TR::DataType dt, size_t size, int32_t offset, bool killedAcrossCalls);
+   TR::SymbolReference * createRubyNamedStaticSymRef(char* name, TR::DataType dt, void* addr,  int32_t offset, bool killedAcrossCalls);
 
    void initializeRubyRedefinedFlagSymbolRefs(uint32_t maxIndex);
    TR::SymbolReference * findRubyRedefinedFlagSymbolRef(int32_t bop);
-   TR::SymbolReference * findOrCreateRubyRedefinedFlagSymbolRef(int32_t bop, char* name, TR::DataTypes dt, void* addr, int32_t offset, bool killedAcrossCalls);
+   TR::SymbolReference * findOrCreateRubyRedefinedFlagSymbolRef(int32_t bop, char* name, TR::DataType dt, void* addr, int32_t offset, bool killedAcrossCalls);
    TR::SymbolReference * findRubyVMEventFlagsSymbolRef();
-   TR::SymbolReference * findOrCreateRubyVMEventFlagsSymbolRef(char* name, TR::DataTypes dt, void* addr, int32_t offset, bool killedAcrossCalls);
+   TR::SymbolReference * findOrCreateRubyVMEventFlagsSymbolRef(char* name, TR::DataType dt, void* addr, int32_t offset, bool killedAcrossCalls);
 
    TR::SymbolReference * findOrCreateRubyInterruptFlagSymRef();
    TR::SymbolReference * findOrCreateRubyInterruptMaskSymRef();

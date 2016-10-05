@@ -40,7 +40,6 @@ JIT_PRODUCT_SOURCE_FILES+=\
     $(JIT_PRODUCT_DIR)/ilgen/RubyIlGeneratorMethodDetails.cpp \
     $(JIT_PRODUCT_DIR)/ilgen/RubyByteCodeIterator.cpp \
     $(JIT_PRODUCT_DIR)/ilgen/RubyIlGenerator.cpp \
-    $(JIT_PRODUCT_DIR)/infra/RubyMonitor.cpp \
     $(JIT_PRODUCT_DIR)/runtime/RubyCodeCacheManager.cpp \
     $(JIT_OMR_DIRTY_DIR)/env/FEBase.cpp \
     $(JIT_OMR_DIRTY_DIR)/env/Globals.cpp \
@@ -97,13 +96,13 @@ JIT_PRODUCT_SOURCE_FILES+=\
     $(JIT_OMR_DIRTY_DIR)/compile/OMRAliasBuilder.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/Assert.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/BitVector.cpp \
-    $(JIT_OMR_DIRTY_DIR)/infra/CfgFrequencyCompletion.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/Checklist.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/HashTab.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/IGBase.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/IGNode.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/ILWalk.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/InterferenceGraph.cpp \
+    $(JIT_OMR_DIRTY_DIR)/infra/OMRMonitor.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/OMRMonitorTable.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/Random.cpp \
     $(JIT_OMR_DIRTY_DIR)/infra/Timer.cpp \
@@ -172,17 +171,18 @@ JIT_PRODUCT_SOURCE_FILES+=\
     $(JIT_OMR_DIRTY_DIR)/optimizer/DataFlowAnalysis.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/DeadStoreElimination.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/DebuggingCounters.cpp \
-    $(JIT_OMR_DIRTY_DIR)/optimizer/OMRDeadTreesElimination.cpp \
+    $(JIT_OMR_DIRTY_DIR)/optimizer/DeadTreesElimination.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/Dominators.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/DominatorVerifier.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/DominatorsChk.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/Inliner.cpp \
+    $(JIT_OMR_DIRTY_DIR)/optimizer/RematTools.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/PreExistence.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/IntersectionBitVectorAnalysis.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/IsolatedStoreElimination.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/LoadExtensions.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/OMRLocalCSE.cpp \
-    $(JIT_OMR_DIRTY_DIR)/optimizer/OMRLocalDeadStoreElimination.cpp \
+    $(JIT_OMR_DIRTY_DIR)/optimizer/LocalDeadStoreElimination.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/LocalOpts.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/OMROptimization.cpp \
     $(JIT_OMR_DIRTY_DIR)/optimizer/OMROptimizationManager.cpp \

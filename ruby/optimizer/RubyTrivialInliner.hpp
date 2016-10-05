@@ -33,6 +33,13 @@ class TrivialInliner : public TR::Optimization
          }
 
       virtual int32_t perform();
+
+      virtual bool         shouldPerform() { 
+         static auto * enableInliner = feGetEnv("RUBY_ENABLE_INLINER"); 
+         return enableInliner; 
+      } 
+
+
    };
 }
 

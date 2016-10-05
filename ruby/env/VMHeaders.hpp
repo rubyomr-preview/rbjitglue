@@ -16,21 +16,32 @@
  *    Multiple authors (IBM Corp.) - initial implementation and documentation
  *******************************************************************************/
 
-#ifndef TR_MONITOR_INCL
-#define TR_MONITOR_INCL
+/**
+ * \file Provides includes from the Ruby VM in a reliable manner to avoid 
+ *       mistakes. 
+ */
 
-#include "infra/RubyMonitor.hpp"
 
-namespace TR
-{
+#ifndef VMHEADERS_INCL
+#define VMHEADERS_INCL
 
-class Monitor : public ::Ruby::MonitorConnector
-   {
-   public:
+#include "omrcfg.h"                   //For OMR_JIT -- needs to come before vm_core.h
 
-   Monitor(char const *name) :
-      Ruby::MonitorConnector(name) {}
-   };
+
+#ifndef OMR_JIT
+#error "Can't compile the the JIT against jitless OMR" 
+#endif
+
+/* Ruby */
+extern "C" {
+#define RUBY_DONT_SUBST
+#include "ruby.h"
+#include "vm_core.h"
+#include "jit.h"
+#include "vm_insnhelper.h" // For BOP_MINUS and FIXNUM_ruby_redefined_OP_FLAG etc.
+#include "iseq.h" 
+#include "insns.inc" 
 }
 
 #endif
+

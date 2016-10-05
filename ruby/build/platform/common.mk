@@ -27,7 +27,7 @@
 #
 ifeq (,$(PLATFORM))
     PLATFORM:=$(shell $(SHELL) $(JIT_SCRIPT_DIR)/guess-platform.sh)
-    $(warning PLATFORM not set. Guessing '$(PLATFORM)')
+    $(info PLATFORM not set. Guessing '$(PLATFORM)')
 endif
 
 #
