@@ -38,10 +38,15 @@ DEPSUFF=.depend.mk
 # to compile .spp files
 #
 AR_PATH?=ar
-AS_PATH?=as
 SED_PATH?=sed
 M4_PATH?=m4
 PERL_PATH?=perl
+
+ifeq ($(OS),osx)
+    AS_PATH?=clang
+else
+    AS_PATH?=as
+endif
 
 # TODO - Redo GCC version logic that used to be here
 ifeq ($(C_COMPILER),gcc)
