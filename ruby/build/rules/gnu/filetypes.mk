@@ -77,6 +77,21 @@ RULE.cpp=$(eval $(DEF_RULE.cpp))
 #
 # Compile .s file into .o file
 #
+ifeq ($(LLVM_ASSEMBLER),1)
+
+define DEF_RULE.s
+$(1): $(2) | jit_createdirs
+	$$(S_CMD) $$(S_FLAGS) $$(patsubst %,-D%=1,$$(S_DEFINES)) $$(patsubst %,-I'%',$$(S_INCLUDES)) -o $$@ $$<
+
+JIT_DIR_LIST+=$(dir $(1))
+
+jit_cleanobjs::
+	rm -f $(1)
+
+endef # DEF_RULE.s
+
+else
+
 define DEF_RULE.s
 $(1): $(2) | jit_createdirs
 	$$(S_CMD) $$(S_FLAGS) $$(patsubst %,--defsym %=1,$$(S_DEFINES)) $$(patsubst %,-I'%',$$(S_INCLUDES)) -o $$@ $$<
@@ -87,6 +102,8 @@ jit_cleanobjs::
 	rm -f $(1)
 
 endef # DEF_RULE.s
+
+endif
 
 RULE.s=$(eval $(DEF_RULE.s))
 
