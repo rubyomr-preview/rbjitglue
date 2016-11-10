@@ -342,7 +342,7 @@ Ruby::IlFastpather::fastpathPlusMinus(TR::TreeTop *tt, TR::Node *node, bool isPl
    gotoNode->setBranchDestination(Btail->getEntry());
 
    // Now change the original call node in Btail to be a load
-   node = TR::Node::recreateAndCopyValidProperties(node,  
+   node = TR::Node::recreate(node,  
       TR::Node::xloadOp(static_cast<TR_RubyFE*>(TR::comp()->fe())));
 
    node->setSymbolReference(tempResult);
