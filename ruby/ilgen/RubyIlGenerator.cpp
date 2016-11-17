@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
  *
  * (c) Copyright IBM Corp. 2000, 2016
  *
@@ -68,7 +68,7 @@ RubyIlGenerator::RubyIlGenerator(TR::IlGeneratorMethodDetails &details,
      _privateSPSymRef(0),
      _icSerialSymRef(0),
      _icValueSymRef(0),
-     _rb_iseq_struct_selfSymRef(0),
+     // _rb_iseq_struct_selfSymRef(0),
      _iseqSymRef(0),
      _mRubyVMFrozenCoreSymRef(0),
      _localSymRefs(TR::comp()->allocator()),
@@ -95,7 +95,9 @@ RubyIlGenerator::RubyIlGenerator(TR::IlGeneratorMethodDetails &details,
    _epSymRef         = symRefTab.createRubyNamedShadowSymRef("ep",        TR::Address,            TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, ep),   true);
    _cfpSymRef        = symRefTab.createRubyNamedShadowSymRef("cfp",       TR::Address,            TR_RubyFE::SLOTSIZE, offsetof(rb_thread_t, cfp),         false);
    _spSymRef         = symRefTab.createRubyNamedShadowSymRef("sp",        TR::Address,            TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, sp),   true);
-   _flagSymRef       = symRefTab.createRubyNamedShadowSymRef("flag",      TR::Address,            TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, flag), true);
+   
+   // Disabled for 2.4 until cfp flag code can be rectified. 
+   // _flagSymRef       = symRefTab.createRubyNamedShadowSymRef("flag",      TR::Address,            TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, flag), true);
 
 
    // PC is being rematerialized before calls that may read/modify its value, so kill it across helper calls.
@@ -104,8 +106,8 @@ RubyIlGenerator::RubyIlGenerator(TR::IlGeneratorMethodDetails &details,
    _icSerialSymRef   = symRefTab.createRubyNamedShadowSymRef("ic_serial", TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(struct iseq_inline_cache_entry, ic_serial),        false);
    _icValueSymRef    = symRefTab.createRubyNamedShadowSymRef("ic_value",  TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(struct iseq_inline_cache_entry, ic_value.value),   false);
 
-   _rb_iseq_struct_selfSymRef =
-                       symRefTab.createRubyNamedShadowSymRef("rb_iseq_struct->self",      TR_RubyFE::slotType(),  TR_RubyFE::SLOTSIZE, offsetof(rb_iseq_struct, self),     false);  //self in rb_iseq_struct does not change across calls.
+   // _rb_iseq_struct_selfSymRef =
+   //                    symRefTab.createRubyNamedShadowSymRef("rb_iseq_struct->self",      TR_RubyFE::slotType(),  TR_RubyFE::SLOTSIZE, offsetof(rb_iseq_struct, self),     false);  //self in rb_iseq_struct does not change across calls.
    _iseqSymRef       = symRefTab.createRubyNamedShadowSymRef("iseq",                      TR::Address,           TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, iseq), true);
 
    static_assert(sizeof(*fe->getJitInterface()->globals.ruby_vm_global_constant_state_ptr) == TR_RubyFE::SLOTSIZE,
@@ -152,8 +154,9 @@ RubyIlGenerator::logAbort(const char * logMessage,
    TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/%s/%s",
                                                           counterReason,
                                                           counterSubreason));
-   fe()->outOfMemory(comp(), logMessage);
-   TR_ASSERT(0, "Compilation abort failed! %s", logMessage);
+
+   traceMsg(comp(), logMessage);
+   throw TR::CompilationException();
    }
 
 
@@ -221,10 +224,13 @@ RubyIlGenerator::getVMExec(TR::Block * insertBlock)
 TR::Block *
 RubyIlGenerator::createVMExec(TR::Block * block)
    {
+#if 0 // This doesn't work yet for Ruby 2.4. 
+         // Side effect of disablement is purely RAS impact. 
    auto flag_xor = storeCFPFlag(TR::Node::xxor(
                                    TR::Node::xconst(VM_FRAME_FLAG_JITTED),
                                    loadCFPFlag()));
    genTreeTop(flag_xor,block);
+#endif
 
    // Call vm_exec_core and return returned value.
    auto * symRef = getHelperSymRef(RubyHelper_vm_exec_core);
@@ -318,10 +324,10 @@ RubyIlGenerator::computeEntryTargets()
    //Analyze opt args
    const auto *iseq = mb().iseq();
 
-   traceMsg(comp(), "arg_opts: %d\n", iseq->param.opt_num);
-   for (int i = 0; i < iseq->param.opt_num; i++)
+   traceMsg(comp(), "arg_opts: %d\n", iseq->body->param.opt_num);
+   for (int i = 0; i < iseq->body->param.opt_num; i++)
       {
-      targets.insert(iseq->param.opt_table[i]);
+      targets.insert(iseq->body->param.opt_table[i]);
       }
 
    // Analyze catch tables.
@@ -578,10 +584,10 @@ RubyIlGenerator::addExceptionTargets(localset &targets)
    {
    const rb_iseq_t *iseq = mb().iseq();
    for (int i = 0;
-        iseq->catch_table && i < iseq->catch_table->size;
+        iseq->body->catch_table && i < iseq->body->catch_table->size;
         i++)
       {
-      struct iseq_catch_table_entry &entry = iseq->catch_table->entries[i];
+      const struct iseq_catch_table_entry &entry = iseq->body->catch_table->entries[i];
       if (!entry.iseq) // Catch entry is local
          {
 
@@ -811,66 +817,73 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
 
          case BIN(getspecial):                  push(getspecial((rb_num_t)getOperand(1), (rb_num_t)getOperand(2)));  _bcIndex += len; break;
          case BIN(setspecial):                  setspecial((rb_num_t)getOperand(1));                                 _bcIndex += len; break;
-         case BIN(getclassvariable):            push(getclassvariable((ID)getOperand(1)));                           _bcIndex += len; break;
-         case BIN(setclassvariable):            setclassvariable((ID)getOperand(1));                                 _bcIndex += len; break;
+         // Disabled for Ruby 2.4 until fixed 
+         // case BIN(getclassvariable):            push(getclassvariable((ID)getOperand(1)));                           _bcIndex += len; break;
+         // case BIN(setclassvariable):            setclassvariable((ID)getOperand(1));                                 _bcIndex += len; break;
          case BIN(putspecialobject):            push(putspecialobject((rb_num_t)getOperand(1)));                     _bcIndex += len; break;
 
          case BIN(checkmatch):                  push(checkmatch((rb_num_t)getOperand(1)));                           _bcIndex += len; break;
 
-         case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
+//         case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
+//
          case BIN(newhash):                     push(newhash((rb_num_t)getOperand(1))); _bcIndex += len; break;
 
          case BIN(newrange):                    push(newrange((rb_num_t)getOperand(1))); _bcIndex += len; break;
 
          case BIN(toregexp):                    push(toregexp((rb_num_t)getOperand(1), (rb_num_t)getOperand(2))); _bcIndex += len; break;
 
-         case BIN(leave):                       _bcIndex = genReturn(pop()); break;
+         case BIN(leave):                       _bcIndex = genLeave(pop()); break;
          case BIN(throw):                       _bcIndex = genThrow((rb_num_t)getOperand(1), pop()); break;
          case BIN(jump):                        _bcIndex = jump(getOperand(1)); break;
          case BIN(branchif):                    _bcIndex = conditionalJump(true /* branchIfTrue*/, getOperand(1)); break;
          case BIN(branchunless):                _bcIndex = conditionalJump(false/*!branchIfTrue*/, getOperand(1)); break;
-         case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
 
-         case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
+         // Disable inline cache opcodes until updated for 2.3 
+         // case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
+         // case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
 
          case BIN(opt_regexpmatch1):            push(opt_regexpmatch1(getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_regexpmatch2):            push(opt_regexpmatch2((CALL_INFO)getOperand(1))); _bcIndex += len; break;
+         case BIN(opt_regexpmatch2):            push(opt_regexpmatch2((CALL_INFO)getOperand(1), getOperand(2))); _bcIndex += len; break;
 
          case BIN(defined):                     push(defined((rb_num_t)getOperand(1), (VALUE)getOperand(2), (VALUE)getOperand(3))); _bcIndex += len; break;
 
-         case BIN(opt_plus):                    push(opt_binary (RubyHelper_vm_opt_plus,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_minus):                   push(opt_binary (RubyHelper_vm_opt_minus,   getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_mult):                    push(opt_binary (RubyHelper_vm_opt_mult,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_div):                     push(opt_binary (RubyHelper_vm_opt_div,     getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_mod):                     push(opt_binary (RubyHelper_vm_opt_mod,     getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_eq):                      push(opt_binary (RubyHelper_vm_opt_eq,      getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_neq):                     push(opt_neq    (RubyHelper_vm_opt_neq,     getOperand(1), getOperand(2))); _bcIndex += len; break;
-         case BIN(opt_lt):                      push(opt_binary (RubyHelper_vm_opt_lt,      getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_le):                      push(opt_binary (RubyHelper_vm_opt_le,      getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_gt):                      push(opt_binary (RubyHelper_vm_opt_gt,      getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_ge):                      push(opt_binary (RubyHelper_vm_opt_ge,      getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_ltlt):                    push(opt_binary (RubyHelper_vm_opt_ltlt,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_not):                     push(opt_unary  (RubyHelper_vm_opt_not,     getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_aref):                    push(opt_binary (RubyHelper_vm_opt_aref,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_aset):                    push(opt_ternary(RubyHelper_vm_opt_aset,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_length):                  push(opt_unary  (RubyHelper_vm_opt_length,  getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_size):                    push(opt_unary  (RubyHelper_vm_opt_size,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_empty_p):                 push(opt_unary  (RubyHelper_vm_opt_empty_p, getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_succ):                    push(opt_unary  (RubyHelper_vm_opt_succ,    getOperand(1))); _bcIndex += len; break;
-         case BIN(opt_aset_with):               push(aset_with((CALL_INFO)getOperand(1), (VALUE)getOperand(2)));
+         case BIN(opt_plus):                    push(opt_binary (RubyHelper_vm_opt_plus,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_minus):                   push(opt_binary (RubyHelper_vm_opt_minus,   getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_mult):                    push(opt_binary (RubyHelper_vm_opt_mult,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_div):                     push(opt_binary (RubyHelper_vm_opt_div,     getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_mod):                     push(opt_binary (RubyHelper_vm_opt_mod,     getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_eq):                      push(opt_binary (RubyHelper_vm_opt_eq,      getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_neq):                     push(opt_neq    (RubyHelper_vm_opt_neq,     getOperand(1), getOperand(2), getOperand(3), getOperand(4))); _bcIndex += len; break;
+         case BIN(opt_lt):                      push(opt_binary (RubyHelper_vm_opt_lt,      getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_le):                      push(opt_binary (RubyHelper_vm_opt_le,      getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_gt):                      push(opt_binary (RubyHelper_vm_opt_gt,      getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_ge):                      push(opt_binary (RubyHelper_vm_opt_ge,      getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_ltlt):                    push(opt_binary (RubyHelper_vm_opt_ltlt,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_not):                     push(opt_unary  (RubyHelper_vm_opt_not,     getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_aref):                    push(opt_binary (RubyHelper_vm_opt_aref,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_aset):                    push(opt_ternary(RubyHelper_vm_opt_aset,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_length):                  push(opt_unary  (RubyHelper_vm_opt_length,  getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_size):                    push(opt_unary  (RubyHelper_vm_opt_size,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_empty_p):                 push(opt_unary  (RubyHelper_vm_opt_empty_p, getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_succ):                    push(opt_unary  (RubyHelper_vm_opt_succ,    getOperand(1), getOperand(2))); _bcIndex += len; break;
+         case BIN(opt_aset_with):               push(aset_with((CALL_INFO)getOperand(1), (CALL_CACHE)getOperand(2), (VALUE)getOperand(3)));
                                                 _bcIndex += len;
                                                 break;
-         case BIN(opt_aref_with):               push(aref_with((CALL_INFO)getOperand(1), (VALUE)getOperand(2)));
+         case BIN(opt_aref_with):               push(aref_with((CALL_INFO)getOperand(1), (CALL_CACHE)getOperand(2), (VALUE)getOperand(3)));
                                                 _bcIndex += len;
                                                 break;
-         case BIN(opt_send_without_block):
-            push(genCall_ruby_stack(getOperand(1), CallType_send_without_block)); _bcIndex += len; break;
          case BIN(send):
-            push(genCall_ruby_stack(getOperand(1), CallType_send)); _bcIndex += len; break;
+            push(genSend((CALL_INFO)getOperand(1), (CALL_CACHE)getOperand(2), (ISEQ)getOperand(3)));
+            _bcIndex += len; break;
+
+         case BIN(opt_send_without_block):
+            push(genSendWithoutBlock((CALL_INFO)getOperand(1), (CALL_CACHE)getOperand(2)));   _bcIndex += len; break;
+
          case BIN(invokesuper):
-            push(genCall_ruby_stack(getOperand(1), CallType_invokesuper)); _bcIndex += len; break;
+            push(genInvokeSuper((CALL_INFO)getOperand(1), (CALL_CACHE)getOperand(2), (ISEQ)getOperand(3)));        _bcIndex += len; break;
+
          case BIN(invokeblock):
-            push(genCall_ruby_stack(getOperand(1), CallType_invokeblock)); _bcIndex += len; break;
+            push(genInvokeBlock((CALL_INFO)getOperand(1)));        _bcIndex += len; break;
 
          // TODO: BIN(defineclass):
          // TODO: BIN(opt_str_freeze):
@@ -878,7 +891,6 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          // TODO: BIN(opt_case_dispatch):
          // TODO: BIN(opt_call_c_function):
          // TODO: BIN(bitblt):
-         // TODO: BIN(opt_send_without_block):
 
          default:
             traceMsg(comp(), "ABORTING COMPILE: Unsupported YARV instruction %d %s\n", (int)insn, byteCodeName(insn));
@@ -994,11 +1006,12 @@ RubyIlGenerator::setlocal(lindex_t idx, rb_num_t level)
    {
    // *(ep - idx) = val
    auto value = pop();
-   TR::Node *store = xstorei(getLocalSymRef(idx, level),
-                              loadEP(level),
-                              value);
-   genTreeTop(store);
-   return store;
+   // Currently need to call out to handle write barriers
+   // TODO: Consider inline wb generation!
+   return genCall(RubyHelper_rb_vm_env_write, TR::Node::xcallOp(), 3, 
+                 loadEP(level), 
+                 TR::Node::xconst(-1 * idx),
+                 value);
    }
 
 TR::Node *
@@ -1013,7 +1026,7 @@ RubyIlGenerator::getinstancevariable(VALUE id, VALUE ic)
    }
 
 TR::Node *
-RubyIlGenerator::aset_with(CALL_INFO ci, VALUE key)
+RubyIlGenerator::aset_with(CALL_INFO ci, CALL_CACHE cc, VALUE key)
    {
    // Pop order matters
    auto* val    = pop();
@@ -1021,12 +1034,15 @@ RubyIlGenerator::aset_with(CALL_INFO ci, VALUE key)
 
    //Shortcut by using xconst asuming sizes are correct
    static_assert(sizeof(ci) == sizeof(VALUE), "CI can't use xconst");
+   static_assert(sizeof(cc) == sizeof(CALL_CACHE), "CC can't use xconst");
    auto * ci_n  = TR::Node::xconst((uintptr_t)ci);
+   auto * cc_n  = TR::Node::xconst((uintptr_t)cc);
    auto * key_n = TR::Node::xconst((uintptr_t)key);
 
-   return genCall(RubyHelper_vm_opt_aset_with, TR::Node::xcallOp(), 5,
+   return genCall(RubyHelper_vm_opt_aset_with, TR::Node::xcallOp(), 6,
                   loadThread(),
                   ci_n,
+                  cc_n,
                   key_n,
                   recv,
                   val);
@@ -1034,18 +1050,21 @@ RubyIlGenerator::aset_with(CALL_INFO ci, VALUE key)
    }
 
 TR::Node *
-RubyIlGenerator::aref_with(CALL_INFO ci, VALUE key)
+RubyIlGenerator::aref_with(CALL_INFO ci, CALL_CACHE cc, VALUE key)
    {
    auto* recv   = pop();
 
    //Shortcut by using xconst asuming sizes are correct
-   static_assert(sizeof(ci) == sizeof(VALUE), "CI can't use xconst");
+   static_assert(sizeof(ci) == sizeof(VALUE),      "CI can't use xconst");
+   static_assert(sizeof(cc) == sizeof(CALL_CACHE), "CC can't use xconst");
    auto * ci_n  = TR::Node::xconst((uintptr_t)ci);
+   auto * cc_n  = TR::Node::xconst((uintptr_t)cc);
    auto * key_n = TR::Node::xconst((uintptr_t)key);
 
-   return genCall(RubyHelper_vm_opt_aref_with, TR::Node::xcallOp(), 4,
+   return genCall(RubyHelper_vm_opt_aref_with, TR::Node::xcallOp(), 5,
                   loadThread(),
                   ci_n,
+                  cc_n,
                   key_n,
                   recv);
 
@@ -1095,50 +1114,55 @@ RubyIlGenerator::genGoto(int32_t target)
    }
 
 TR::Node *
-RubyIlGenerator::opt_unary(TR_RuntimeHelper helper, VALUE ci)
+RubyIlGenerator::opt_unary(TR_RuntimeHelper helper, VALUE ci, VALUE cc)
    {
-   TR::Node *recv = pop();
-   return genCall(helper, TR::Node::xcallOp(), 3,
-                  loadThread(),
-                  TR::Node::aconst((uintptr_t)ci),
-                  recv);
-   }
-
-TR::Node *
-RubyIlGenerator::opt_binary(TR_RuntimeHelper helper, VALUE ci)
-   {
-   TR::Node *obj  = pop();
    TR::Node *recv = pop();
    return genCall(helper, TR::Node::xcallOp(), 4,
                   loadThread(),
                   TR::Node::aconst((uintptr_t)ci),
-                  recv,
-                  obj);
+                  TR::Node::aconst((uintptr_t)cc),
+                  recv);
    }
 
 TR::Node *
-RubyIlGenerator::opt_ternary(TR_RuntimeHelper helper, VALUE ci)
+RubyIlGenerator::opt_binary(TR_RuntimeHelper helper, VALUE ci, VALUE cc)
    {
-   TR::Node *third= pop();
    TR::Node *obj  = pop();
    TR::Node *recv = pop();
    return genCall(helper, TR::Node::xcallOp(), 5,
                   loadThread(),
                   TR::Node::aconst((uintptr_t)ci),
+                  TR::Node::aconst((uintptr_t)cc),
+                  recv,
+                  obj);
+   }
+
+TR::Node *
+RubyIlGenerator::opt_ternary(TR_RuntimeHelper helper, VALUE ci, VALUE cc)
+   {
+   TR::Node *third= pop();
+   TR::Node *obj  = pop();
+   TR::Node *recv = pop();
+   return genCall(helper, TR::Node::xcallOp(), 6,
+                  loadThread(),
+                  TR::Node::aconst((uintptr_t)ci),
+                  TR::Node::aconst((uintptr_t)cc),
                   recv,
                   obj,
                   third);
    }
 
 TR::Node *
-RubyIlGenerator::opt_neq(TR_RuntimeHelper helper, VALUE ci, VALUE ci_eq)
+RubyIlGenerator::opt_neq(TR_RuntimeHelper helper, VALUE ci, VALUE cc, VALUE ci_eq, VALUE cc_eq)
    {
    TR::Node *obj  = pop();
    TR::Node *recv = pop();
-   return genCall(helper, TR::Node::xcallOp(), 5,
+   return genCall(helper, TR::Node::xcallOp(), 7,
                   loadThread(),
                   TR::Node::aconst((uintptr_t)ci),
+                  TR::Node::aconst((uintptr_t)cc),
                   TR::Node::aconst((uintptr_t)ci_eq),
+                  TR::Node::aconst((uintptr_t)cc_eq),
                   recv,
                   obj);
    }
@@ -1247,10 +1271,10 @@ RubyIlGenerator::genCall(TR_RuntimeHelper helper, TR::ILOpCodes opcode, int32_t 
    }
 
 
+/*
 void
-RubyIlGenerator::dumpCallInfo(rb_call_info_t* ci)
+RubyIlGenerator::dumpCallInfo(CALL_INFO ci)
    {
-
 
    traceMsg(comp(), "rb_call_info_t %p\n\t"
             "{mid = %d,\n\t"
@@ -1293,85 +1317,127 @@ RubyIlGenerator::dumpCallInfo(rb_call_info_t* ci)
    if (ci->flag & VM_CALL_ARGS_BLOCKARG   ) traceMsg(comp(),"VM_CALL_ARGS_BLOCKARG   |");
    traceMsg(comp()," | 0\n");
    }
+   */
 
-/**
- * Determine the appropriate number of arguments for a call based on a
- * `rb_call_info_t` and calltype.
- */
-uint32_t
-RubyIlGenerator::computeNumArgs(rb_call_info_t* ci, CallType type)
+TR::Node *
+RubyIlGenerator::genSend(CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq) 
    {
-   bool blockarg = ci->flag & VM_CALL_ARGS_BLOCKARG;
-   auto numArgs  = 0;
-   switch (type)
-      {
-      case CallType_send:
-         numArgs = 1 /* receiver */ + ci->orig_argc;
-         if (blockarg) numArgs++;
-         break;
+   int32_t restores, pending = 0; 
+   auto * recv = genCall_preparation(ci, 
+                             1 /* receiver */ + ci->orig_argc + (ci->flag & VM_CALL_ARGS_BLOCKARG ? 1 : 0),
+                             restores,
+                             pending
+                             ); 
 
-      case CallType_send_without_block:
-         numArgs = 1 /* receiver */ + ci->orig_argc;
-         if (blockarg)
-            {
-            logAbort("send_without_block: Oddly... has unsupported block arg","send_without_has_blockarg");
-            //Unreachable.
-            }
-         break;
+   auto * callNode = genCall(RubyHelper_vm_send, TR::Node::xcallOp(), 5,
+                      loadThread(),
+                      TR::Node::aconst((uintptr_t)ci),
+                      TR::Node::aconst((uintptr_t)cc),
+                      TR::Node::aconst((uintptr_t)blockiseq),
+                      loadCFP());
 
-      case CallType_invokesuper:
-         numArgs = 1 /* receiver */ + ci->orig_argc ;
-         if (blockarg) numArgs++;
-         break;
-
-      case CallType_invokeblock:
-         numArgs = ci->orig_argc; //No receiver for invoke block.
-         if (blockarg)
-            {
-            logAbort("invokeblock: Unsupported block arg","invokeblock_blockarg");
-            }
-         break;
-
-      default:
-         TR_ASSERT(false, "Unknown calltype\n");
-      }
-
-   return numArgs;
+   cleanupStack(restores,pending);
+   return callNode; 
    }
 
-/**
- * Generate a call to a ruby function that gets its arguments via the ruby stack.
- */
 TR::Node *
-RubyIlGenerator::genCall_ruby_stack(VALUE civ, CallType type)
+RubyIlGenerator::genSendWithoutBlock(CALL_INFO ci, CALL_CACHE cc)
    {
-   // Basic operation:
-   // - pop the arguments from our stack
-   // - push them onto the ruby stack
-   // - call appropriate handler.
-   // - push the return value
-   rb_call_info_t *ci = reinterpret_cast<rb_call_info_t*>(civ);
+   if (ci->flag & VM_CALL_ARGS_BLOCKARG)
+      {
+      logAbort("send_without_block: Oddly... has unsupported block arg","send_without_has_blockarg");
+      //Unreachable.
+      }
+   int32_t restores, pending = 0; 
+   auto* recv = genCall_preparation(ci, 1 /* receiver */ + ci->orig_argc, restores, pending); 
+   TR_ASSERT(recv, "Reciever is null, despite sending-without-block\n");
 
-   if (trace_enabled) dumpCallInfo(ci);
+   auto* callNode = genCall(RubyHelper_vm_send_without_block, TR::Node::xcallOp(), 4,
+                      loadThread(),
+                      TR::Node::aconst((uintptr_t)ci),
+                      TR::Node::aconst((uintptr_t)cc),
+                      recv);
 
-   char * callTypes[] = {
-      "CallType_send",
-      "CallType_send_without_block",
-      "CallType_invokesuper",
-      "CallType_invokeblock"
-   };
+   //Let the inliner take a pass at this.
+   methodSymbol()->setMayHaveInlineableCall(true);
 
+   cleanupStack(restores,pending);
+   return callNode;
+   }
+
+TR::Node *
+RubyIlGenerator::genInvokeSuper(CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq) 
+   {
+   int32_t restores, pending = 0; 
+   auto* recv = genCall_preparation(ci, 
+                             1 /* receiver */ + ci->orig_argc + (ci->flag & VM_CALL_ARGS_BLOCKARG ? 1 : 0),
+                             restores, 
+                             pending
+                             ); 
+
+   auto* callNode = genCall(RubyHelper_vm_invokesuper, TR::Node::xcallOp(), 5,
+                      loadThread(),
+                      TR::Node::aconst((uintptr_t)ci),
+                      TR::Node::aconst((uintptr_t)cc),
+                      TR::Node::aconst((uintptr_t)blockiseq),
+                      loadCFP());
+
+   cleanupStack(restores,pending);
+   return callNode;
+   }
+
+TR::Node *
+RubyIlGenerator::genInvokeBlock(CALL_INFO ci) 
+   {
+   if (ci->flag & VM_CALL_ARGS_BLOCKARG)
+      {
+      logAbort("invokeblock: Unsupported block arg","invokeblock_blockarg");
+      }
+   int32_t restores, pending = 0; 
+   auto* recv = genCall_preparation(ci, ci->orig_argc, restores, pending); 
+   auto* callNode = genCall(RubyHelper_vm_invokeblock, TR::Node::xcallOp(), 2,
+                      loadThread(),
+                      TR::Node::aconst((uintptr_t)ci));
+   cleanupStack(restores,pending);
+   return callNode; 
+   }
+
+void
+RubyIlGenerator::cleanupStack(int32_t restores, int32_t pending) 
+   {
+   if (restores > 0)
+      {
+      TR_ASSERT(pending > 0, "Reducing stack height where no buy occured!");
+      //Return stack pointer to where it was before the buy for this call.
+      // genRubyStackAdjust(-1 * restores );
+      rematerializeSP();
+      }
+   }
+
+
+/** 
+ * Does the preparation work for building a ruby stack call: 
+ * - restore pending trees.
+ *
+ * Returns the reciever node, if relevant. 
+ */
+TR::Node* 
+RubyIlGenerator::genCall_preparation(CALL_INFO ci, uint32_t numArgs, int32_t& restores, int32_t& pending)
+   {
+   /* if (trace_enabled) dumpCallInfo(ci); */ 
    if (ci->flag & VM_CALL_TAILCALL)
       {
       logAbort("jit doesn't support tailcall optimized iseqs","vm_call_tailcall");
       //unreachable.
       }
 
-   int32_t pending   = _stack->size();
-   auto    numArgs   = computeNumArgs(ci, type);
-   int32_t restores  = pending - numArgs; // Stack elements not consumed by call.
+   pending   = _stack->size();
+   restores  = pending - numArgs; // Stack elements not consumed by call.
 
-   TR_ASSERT(restores >= 0,  "More args required than the stack has... %d = %d - %d (%s)\n", restores, pending, numArgs,  callTypes[type]);
+   TR_ASSERT(restores >= 0, "More args required than the stack has... %d = %d - %d\n",
+             restores,
+             pending,
+             numArgs);
 
    if (restores > 0 && feGetEnv("DISABLE_YARV_STACK_RESTORATION"))
       {
@@ -1383,8 +1449,7 @@ RubyIlGenerator::genCall_ruby_stack(VALUE civ, CallType type)
    if (trace_enabled)
       traceMsg(comp(), "Creating call at bci=%d\n", _bcIndex);
 
-   TR::Node *recv = 0;
-
+   TR::Node *recv = NULL;
    if (pending > 0)
       {
       rematerializeSP();
@@ -1424,60 +1489,10 @@ RubyIlGenerator::genCall_ruby_stack(VALUE civ, CallType type)
          }
       }
 
-   TR::Node *callNode = 0;
-   switch (type)
-      {
-      case CallType_send:
-         callNode = genCall(RubyHelper_vm_send, TR::Node::xcallOp(), 3,
-                            loadThread(),
-                            TR::Node::aconst((uintptr_t)civ),
-                            loadCFP());
-         break;
-      case CallType_send_without_block:
-         TR_ASSERT(recv, "Reciever is null, despite sending-without-block\n");
-         callNode = genCall(RubyHelper_vm_send_without_block, TR::Node::xcallOp(), 3,
-                            loadThread(),
-                            TR::Node::aconst((uintptr_t)civ),
-                            recv);
-         //Let the inliner take a pass at this.
-         methodSymbol()->setMayHaveInlineableCall(true);
-         break;
-      case CallType_invokesuper:
-         {
-/*
-         TR::Node *blockArg = !(ci->flag & VM_CALL_ARGS_BLOCKARG) ?
-            genCall(RubyHelper_vm_get_block_ptr, TR::Node::xcallOp(), 1, loadEP()) :
-            TR::Node::aconst(0);
-*/
-         callNode = genCall(RubyHelper_vm_invokesuper, TR::Node::xcallOp(), 3,
-                            loadThread(),
-                            TR::Node::aconst((uintptr_t)civ),
-                            loadCFP());
-         }
-         break;
 
-      case CallType_invokeblock:
-         callNode = genCall(RubyHelper_vm_invokeblock, TR::Node::xcallOp(), 2,
-                            loadThread(),
-                            TR::Node::aconst((uintptr_t)civ));
-         break;
-
-      default:
-         TR_ASSERT(0,                       "invalid call type");
-         logAbort("invalid call type", "invalid_call_type");
-         //unreachable.
-      }
-
-   if (restores > 0)
-      {
-      TR_ASSERT(pending > 0, "Reducing stack height where no buy occured!");
-      //Return stack pointer to where it was before the buy for this call.
-      // genRubyStackAdjust(-1 * restores );
-      rematerializeSP();
-      }
-
-   return callNode;
+   return recv; 
    }
+
 
 TR::Node *
 RubyIlGenerator::createLocalArray(int32_t num)
@@ -1672,52 +1687,41 @@ RubyIlGenerator::setspecial(rb_num_t key)
          obj);
    }
 
-TR::Node *
-RubyIlGenerator::putiseq(ISEQ iseq)
-   {
-   TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
-   return xloadi(_rb_iseq_struct_selfSymRef, iseqNode);
-   }
+// TR::Node *
+// RubyIlGenerator::putiseq(ISEQ iseq)
+//    {
+//    TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
+//    return xloadi(_rb_iseq_struct_selfSymRef, iseqNode);
+//    }
 
 TR::Node *
 RubyIlGenerator::putspecialobject(rb_num_t value_type)
    {
    enum vm_special_object_type type = (enum vm_special_object_type) value_type;
 
+   TR_RuntimeHelper helper;
    //Check if we can support this value_type.
    switch(type)
       {
       case VM_SPECIAL_OBJECT_CBASE:
+         helper = RubyHelper_vm_get_cbase;
+         break; 
       case VM_SPECIAL_OBJECT_CONST_BASE:
+         helper = RubyHelper_vm_get_const_base;
+         break; 
       case VM_SPECIAL_OBJECT_VMCORE:
-         //We support these cases.
-         break;
+         // We can use RubyVMFrozenCore a compile time constant because:
+         // 1. the object outlives all compiled methods
+         // 2. objects are never moved by gc -- as long as that's true, 
+         //    the following is safe.
+         return TR::Node::aconst(*(uintptrj_t*)fe()->getJitInterface()->globals.ruby_rb_mRubyVMFrozenCore_ptr);
       default:
          logAbort("we do not support putspecialobject with this case","putspecialobject_value");
+         // unreachable. 
          break;
       }
 
-   if(type != VM_SPECIAL_OBJECT_VMCORE)
-      {
-      TR_RuntimeHelper helper = (type == VM_SPECIAL_OBJECT_CBASE) ?
-                                 RubyHelper_vm_get_cbase :
-                                 RubyHelper_vm_get_const_base;
-
-      return genCall(helper, TR::Node::xcallOp(), 2,
-            load_CFP_ISeq(),
-            loadEP());
-      }
-   else
-      {
-      TR_ASSERT(type == VM_SPECIAL_OBJECT_VMCORE, "putspecialobject in strange state.");
-
-      // We can use RubyVMFrozenCore a compile time constant because:
-      // 1. the object outlives all compiled methods
-      // 2. objects are never moved by gc -- as long as that's true, 
-      //    the following is safe.
-      TR::Node *value = TR::Node::aconst(*(uintptrj_t*)fe()->getJitInterface()->globals.ruby_rb_mRubyVMFrozenCore_ptr);
-      return value;
-      }
+      return genCall(helper, TR::Node::xcallOp(), 1, loadEP());
    }
 
 
@@ -1802,13 +1806,14 @@ RubyIlGenerator::opt_regexpmatch1(VALUE r)
    }
 
 TR::Node*
-RubyIlGenerator::opt_regexpmatch2(CALL_INFO ci)
+RubyIlGenerator::opt_regexpmatch2(CALL_INFO ci, VALUE cc)
    {
    auto obj1 = pop();
    auto obj2 = pop();
-   return genCall(RubyHelper_vm_opt_regexpmatch2, TR::Node::xcallOp(), 4,
+   return genCall(RubyHelper_vm_opt_regexpmatch2, TR::Node::xcallOp(), 5,
                   loadThread(),
                   TR::Node::aconst((uintptr_t)ci),
+                  TR::Node::aconst((uintptr_t)cc),
                   obj2, //Autogenerated calback has obj2 before obj1.
                   obj1);
    }
@@ -1830,48 +1835,55 @@ RubyIlGenerator::getconstant(ID id)
    {
    auto klass = pop();
 
-   return genCall(RubyHelper_vm_get_ev_const, TR::Node::xcallOp(), 5,
+   return genCall(RubyHelper_vm_get_ev_const, TR::Node::xcallOp(), 4,
                   loadThread(),
-                  // FIXME: make sure it is okay to use a constant for the iseq
-                  // alternatively we can do th->cfp->iseq
-                  TR::Node::aconst((uintptr_t)mb().iseq()),
                   klass,
                   TR::Node::xconst(id),
                   TR::Node::xconst(0));
    }
 
+
 void
 RubyIlGenerator::setconstant(ID id)
    {
+   /* 
    auto cbase = pop();
    auto val   = pop();
    genCall(RubyHelper_vm_check_if_namespace, TR::call, 1,
            cbase);
    genCall(RubyHelper_rb_const_set, TR::call, 3,
            cbase, TR::Node::xconst(id), val);
+   */
+   auto cbase = pop();
+   auto val   = pop();
+   genCall(RubyHelper_vm_setconstant, TR::call, 4,
+           loadThread(), 
+           TR::Node::xconst(id),
+           val,
+           cbase
+           );
    }
 
-TR::Node *
-RubyIlGenerator::genCall_funcallv(VALUE civ)
-   {
-   // Basic Operation:
-   // - put the arguments in a contiguous set of temps (argv)
-   // - pop the receiver from our stack
-   // - call rb_funcallv(recv, mid, argc, argv)
-   // - push the return value
-   rb_call_info_t *ci = reinterpret_cast<rb_call_info_t*>(civ);
-
-   TR_ASSERT(0 == (ci->flag & VM_CALL_ARGS_BLOCKARG), "send: we don't support block arg just yet");
-
-   TR::Node *argv     = createLocalArray(ci->orig_argc);
-   TR::Node *receiver = pop();
-
-   return genCall(RubyHelper_rb_funcallv, TR::Node::xcallOp(), 4,
-                  receiver,
-                  TR::Node::xconst(ci->mid),
-                  TR::Node::xconst(ci->orig_argc),
-                  argv);
-   }
+// RubyIlGenerator::genCall_funcallv(VALUE civ)
+//    {
+//    // Basic Operation:
+//    // - put the arguments in a contiguous set of temps (argv)
+//    // - pop the receiver from our stack
+//    // - call rb_funcallv(recv, mid, argc, argv)
+//    // - push the return value
+//    rb_call_info_t *ci = reinterpret_cast<rb_call_info_t*>(civ);
+// 
+//    TR_ASSERT(0 == (ci->flag & VM_CALL_ARGS_BLOCKARG), "send: we don't support block arg just yet");
+// 
+//    TR::Node *argv     = createLocalArray(ci->orig_argc);
+//    TR::Node *receiver = pop();
+// 
+//    return genCall(RubyHelper_rb_funcallv, TR::Node::xcallOp(), 4,
+//                   receiver,
+//                   TR::Node::xconst(ci->mid),
+//                   TR::Node::xconst(ci->orig_argc),
+//                   argv);
+//    }
 
 int32_t
 RubyIlGenerator::jump(int32_t offset)
@@ -1995,34 +2007,45 @@ RubyIlGenerator::generateCfpPop()
    return cfp;
    }
 
-int32_t
-RubyIlGenerator::genReturn(TR::Node *retval, bool popframe)
-   {
-   genAsyncCheck();
 
-   // anchor retval before popping the frame
+
+int32_t
+RubyIlGenerator::genLeave(TR::Node *retval)
+   {
    genTreeTop(retval);
 
-   if (popframe)
-      {
-      auto* cfp = generateCfpPop();
-      // pop the frame
-      // th->cfp++;
-      genTreeTop(cfp);
-      }
+   rematerializeSP();
+
+   // This is a leave, so we should verify vm_jit_stack_check
+   //
+   genCall(RubyHelper_vm_jit_stack_check, TR::call, 2, 
+              loadThread(),
+              loadCFP());
+
+   genAsyncCheck();
+
+
+   // This is only legal if the frame is already maked as FINISH,
+   // which it should have been  
+   genTreeTop(generateCfpPop()); 
 
    genTreeTop(TR::Node::create(TR::areturn, 1, retval));
    return findNextByteCodeToGen();
-   }
+  }
 
 int32_t
 RubyIlGenerator::genThrow(rb_num_t throw_state, TR::Node *throwobj)
    {
+   genAsyncCheck();
+
    TR::Node *val = genCall(RubyHelper_vm_throw, TR::Node::xcallOp(), 3,
                             loadThread(),
                             TR::Node::xconst(throw_state),
                             throwobj);
-   return genReturn(val, false /*!popframe*/);
+
+   // THROW_EXCEPTION == return value. 
+   genTreeTop(TR::Node::create(TR::areturn, 1, val));
+   return findNextByteCodeToGen();
    }
 
 void
@@ -2119,10 +2142,15 @@ RubyIlGenerator::loadPC()
 TR::Node *
 RubyIlGenerator::storeCFPFlag(TR::Node *val)
    {
+#if 0 
    return TR::Node::createWithSymRef(TR::astorei, 2, 2,
                             loadCFP(),
                             val,
                             _flagSymRef);
+#else
+   TR_ASSERT_FATAL(false, "not working for 2.4"); 
+   return NULL;
+#endif
    }
 
 TR::Node *
@@ -2155,6 +2183,7 @@ RubyIlGenerator::loadPrivateSP()
    return TR::Node::createLoad(_privateSPSymRef);
    }
 
+
 TR::Node *
 RubyIlGenerator::loadEP(rb_num_t level)
    {
@@ -2178,7 +2207,7 @@ RubyIlGenerator::loadPrevEP(TR::Node *ep)
    // We can provide better aliasing if we  use a specific shadow symbols
    // instead of generic-int-shadow
    TR::SymbolReference *shadow = comp()->getSymRefTab()->
-      findOrCreateGenericIntShadowSymbolReference(0, true /*allocUseDefBitVector*/);
+      findOrCreateGenericIntShadowSymbolReference(VM_ENV_DATA_INDEX_SPECVAL * sizeof(VALUE) , true /*allocUseDefBitVector*/);
 
    return TR::Node::xand(xloadi(shadow,
                   ep),

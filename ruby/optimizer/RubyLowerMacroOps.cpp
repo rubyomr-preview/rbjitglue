@@ -147,7 +147,7 @@ Ruby::LowerMacroOps::lowerAsyncCheck(TR::Node *asynccheckNode, TR::TreeTop *asyn
    auto callTree                    = TR::TreeTop::create(comp, TR::Node::create(TR::treetop, 1, callNode));
 
    TR::Node       *valueNode   =   pendingInterruptsNode();
-   TR::DataTypes  valueType   =   valueNode->getDataType();
+   TR::DataType  valueType   =   valueNode->getDataType();
    TR::Node       *constNode   =   TR::Node::create(asynccheckNode, TR::ILOpCode::constOpCode(valueType), 0);
    TR::ILOpCodes   op          =   TR::ILOpCode::ifcmpneOpCode(valueType);
    TR::Node       *ifNode      =   TR::Node::createif(op, valueNode, constNode);

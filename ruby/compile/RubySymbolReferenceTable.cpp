@@ -116,7 +116,7 @@ Ruby::SymbolReferenceTable::findOrCreateRubyHelperSymbolRef(TR_RuntimeHelper hel
 
 
 TR::SymbolReference *
-Ruby::SymbolReferenceTable::createRubyNamedShadowSymRef(char* name, TR::DataTypes dt, size_t size, int32_t offset, bool killedAcrossCalls)
+Ruby::SymbolReferenceTable::createRubyNamedShadowSymRef(char* name, TR::DataType dt, size_t size, int32_t offset, bool killedAcrossCalls)
    {
    TR::Symbol* symbol = TR::Symbol::createNamedShadow(comp()->trHeapMemory(), dt, size, name);
    TR::SymbolReference* symRef = new (comp()->trHeapMemory()) TR::SymbolReference(self(), symbol, offset);
@@ -130,7 +130,7 @@ Ruby::SymbolReferenceTable::createRubyNamedShadowSymRef(char* name, TR::DataType
 
 
 TR::SymbolReference *
-Ruby::SymbolReferenceTable::createRubyNamedStaticSymRef(char* name, TR::DataTypes dt, void* addr, int32_t offset, bool killedAcrossCalls)
+Ruby::SymbolReferenceTable::createRubyNamedStaticSymRef(char* name, TR::DataType dt, void* addr, int32_t offset, bool killedAcrossCalls)
    {
    TR::Symbol* symbol = TR::StaticSymbol::createNamed(comp()->trHeapMemory(), dt, addr, name);
    TR::SymbolReference* symRef = new (comp()->trHeapMemory()) TR::SymbolReference(self(), symbol, offset);
@@ -156,7 +156,7 @@ Ruby::SymbolReferenceTable::initializeRubyRedefinedFlagSymbolRefs(uint32_t maxIn
 
 
 TR::SymbolReference *
-Ruby::SymbolReferenceTable::findOrCreateRubyRedefinedFlagSymbolRef(int32_t bop, char* name, TR::DataTypes dt, void* addr, int32_t offset, bool killedAcrossCalls)
+Ruby::SymbolReferenceTable::findOrCreateRubyRedefinedFlagSymbolRef(int32_t bop, char* name, TR::DataType dt, void* addr, int32_t offset, bool killedAcrossCalls)
    {
 
    if(_rubyRedefinedFlagSymRefs[bop] == NULL)
@@ -174,7 +174,7 @@ Ruby::SymbolReferenceTable::findRubyRedefinedFlagSymbolRef(int32_t bop)
 
 
 TR::SymbolReference *
-Ruby::SymbolReferenceTable::findOrCreateRubyVMEventFlagsSymbolRef(char* name, TR::DataTypes dt, void* addr, int32_t offset, bool killedAcrossCalls)
+Ruby::SymbolReferenceTable::findOrCreateRubyVMEventFlagsSymbolRef(char* name, TR::DataType dt, void* addr, int32_t offset, bool killedAcrossCalls)
    {
    if (_ruby_vm_event_flags_SymRef == NULL)
       _ruby_vm_event_flags_SymRef = createRubyNamedStaticSymRef(name, dt, addr, offset, killedAcrossCalls);

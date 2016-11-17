@@ -22,6 +22,7 @@
 #include "control/Options.hpp"
 #include "control/Options_inlines.hpp"
 #include "env/IO.hpp"
+#include "env/VMHeaders.hpp"
 #include "ruby/version.h"
 #include "ruby/config.h"
 #include "env/CompilerEnv.hpp"
@@ -63,6 +64,7 @@ initializeAllHelpers(struct rb_vm_struct *vm, TR_RubyJitConfig *jitConfig)
    initHelper(rb_funcallv);
    initHelper(vm_send);
    initHelper(vm_send_without_block);
+   initHelper(vm_setconstant);
    initHelper(vm_getspecial);
    initHelper(lep_svar_set);
    initHelper(vm_getivar);
@@ -126,11 +128,12 @@ initializeAllHelpers(struct rb_vm_struct *vm, TR_RubyJitConfig *jitConfig)
    initHelper(vm_defined);
    initHelper(vm_invokesuper);
    initHelper(vm_invokeblock);
-   initHelper(vm_get_block_ptr);
    initHelper(rb_method_entry);
    initHelper(rb_class_of);
+   /*
    initHelper(vm_send_woblock_jit_inline_frame);
    initHelper(vm_send_woblock_inlineable_guard);
+   */
    initHelper(rb_bug);
    initHelper(vm_exec_core);
 #ifdef OMR_JIT_PROFILING
@@ -139,6 +142,8 @@ initializeAllHelpers(struct rb_vm_struct *vm, TR_RubyJitConfig *jitConfig)
    initHelper(rb_class2name);
    initHelper(vm_opt_aref_with);
    initHelper(vm_opt_aset_with);
+   initHelper(rb_vm_env_write); 
+   initHelper(vm_jit_stack_check); 
    }
 
 static void
@@ -302,18 +307,18 @@ void *jit_compile(rb_iseq_t *iseq)
    TR_Hotness optLevel = cold;
 
    int32_t len =
-      RSTRING_LEN(iseq->location.path) +
+      RSTRING_LEN(iseq->body->location.path) +
       (sizeof(size_t) * 3) +                // first_lineno: estimate three decimal digits per byte
-      RSTRING_LEN(iseq->location.label) +
+      RSTRING_LEN(iseq->body->location.label) +
       3;                                    // two colons and a null terminator
 
    // FIXME: use std::string when it becomes possible
    char *name = (char*) malloc(len);
    auto truncated       = false;
    auto written         = snprintf(name, len, "%s:%ld:%s",
-           (char*) RSTRING_PTR(iseq->location.path),
-           FIX2LONG(iseq->location.first_lineno),
-           (char* )RSTRING_PTR(iseq->location.label));
+           (char*) RSTRING_PTR(iseq->body->location.path),
+           FIX2LONG(iseq->body->location.first_lineno),
+           (char* )RSTRING_PTR(iseq->body->location.label));
 
    if (written > len)
       {
@@ -339,13 +344,13 @@ void *jit_compile(rb_iseq_t *iseq)
 
    auto &fe = TR_RubyFE::singleton();
 
-   if ((iseq->param.flags.has_opt
+   if ((iseq->body->param.flags.has_opt
          && feGetEnv("TR_DISABLE_OPTIONAL_ARGUMENTS"))   ||
-       iseq->param.flags.has_rest   ||
-       iseq->param.flags.has_post   ||
-       iseq->param.flags.has_block  ||
-       iseq->param.flags.has_kw     ||
-       iseq->param.flags.has_kwrest
+       iseq->body->param.flags.has_rest   ||
+       iseq->body->param.flags.has_post   ||
+       iseq->body->param.flags.has_block  ||
+       iseq->body->param.flags.has_kw     ||
+       iseq->body->param.flags.has_kwrest
        )
       {
       auto jitConfig = fe.jitConfig();
@@ -356,12 +361,12 @@ void *jit_compile(rb_iseq_t *iseq)
             " opts %d rest %d post %d block %d keywords %d kwrest %d>\n",
             name,
             truncated ? "(truncated)" : "",
-            iseq->param.flags.has_opt,
-            iseq->param.flags.has_rest,
-            iseq->param.flags.has_post,
-            iseq->param.flags.has_block,
-            iseq->param.flags.has_kw,
-            iseq->param.flags.has_kwrest);
+            iseq->body->param.flags.has_opt,
+            iseq->body->param.flags.has_rest,
+            iseq->body->param.flags.has_post,
+            iseq->body->param.flags.has_block,
+            iseq->body->param.flags.has_kw,
+            iseq->body->param.flags.has_kwrest);
          }
       goto cleanupAndExit;
       }

@@ -216,9 +216,9 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    TR::SymbolReference *getStackSymRef(int32_t stackHeight);
    TR::SymbolReference *getLocalSymRef(lindex_t idx, rb_num_t level);
    TR::SymbolReference *getHelperSymRef(TR_RuntimeHelper helper);
-   TR::SymbolReference *createShadowSymRef(char *name, TR::DataTypes dt, size_t size,
+   TR::SymbolReference *createShadowSymRef(char *name, TR::DataType dt, size_t size,
                                           int32_t offset, bool killedAcrossCalls);
-   TR::SymbolReference *createStaticSymRef(char *name, TR::DataTypes dt,
+   TR::SymbolReference *createStaticSymRef(char *name, TR::DataType dt,
                                           void *addr, bool killedAcrossCalls);
 
    TR::Block *createBug(TR::Block*,const char *, int32_t, ...); 
@@ -277,10 +277,10 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    void       setconstant   (ID id);
    TR::Node *getglobal     (GENTRY entry);
    TR::Node *setglobal     (GENTRY entry);
-   TR::Node *opt_binary    (TR_RuntimeHelper helper, VALUE ci);
-   TR::Node *opt_ternary   (TR_RuntimeHelper helper, VALUE ci);
-   TR::Node *opt_unary     (TR_RuntimeHelper helper, VALUE ci);
-   TR::Node *opt_neq       (TR_RuntimeHelper helper, VALUE ci, VALUE ci_eq);
+   TR::Node *opt_binary    (TR_RuntimeHelper helper, VALUE ci, VALUE cc);
+   TR::Node *opt_ternary   (TR_RuntimeHelper helper, VALUE ci, VALUE cc);
+   TR::Node *opt_unary     (TR_RuntimeHelper helper, VALUE ci, VALUE cc);
+   TR::Node *opt_neq       (TR_RuntimeHelper helper, VALUE ci, VALUE cc, VALUE ci_eq, VALUE cc_eq);
    TR::Node *newhash       (rb_num_t num);
    TR::Node *newrange      (rb_num_t flag);
    TR::Node *newarray      (rb_num_t num);
@@ -296,17 +296,17 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    TR::Node *checkmatch    (rb_num_t flag);
    TR::Node *toregexp      (rb_num_t opt, rb_num_t cnt);
    TR::Node *opt_regexpmatch1(VALUE r);
-   TR::Node *opt_regexpmatch2(CALL_INFO ci);
+   TR::Node *opt_regexpmatch2(CALL_INFO ci, VALUE cc);
    TR::Node *defined       (rb_num_t op_type, VALUE obj, VALUE needstr);
-   TR::Node *aref_with     (CALL_INFO, VALUE);
-   TR::Node *aset_with     (CALL_INFO, VALUE);
+   TR::Node *aref_with     (CALL_INFO, CALL_CACHE, VALUE);
+   TR::Node *aset_with     (CALL_INFO, CALL_CACHE, VALUE);
    void       trace        (rb_num_t nf);
 
    // Control flow
    int32_t jump(int32_t offset);
    int32_t conditionalJump(bool branchIfTrue, int32_t offset);
    int32_t getinlinecache(OFFSET offset, IC ic);
-   int32_t genReturn(TR::Node *retval, bool popframe=true);
+   int32_t genLeave(TR::Node *retval);
    int32_t genThrow(rb_num_t throw_state, TR::Node *throwobj);
    int32_t genGoto(int32_t target);
    void    genAsyncCheck();
@@ -314,14 +314,18 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    void    rematerializeSP();
    TR::Node *generateCfpPop();
 
-// void    genRubyPush(TR::Node *v);
 
    TR::Node *genCall(TR_RuntimeHelper helper, TR::ILOpCodes opcode, int32_t num, ...);
-   TR::Node *genCall_ruby_stack(VALUE civ, CallType type);
+   TR::Node *genCall_preparation(CALL_INFO ci, uint32_t numArgs, int32_t& restores, int32_t& pending);
    TR::Node *genCall_funcallv(VALUE ci);
+   void cleanupStack(int32_t restores, int32_t pending);
 
-   void     dumpCallInfo(rb_call_info_t *);
-   uint32_t computeNumArgs(rb_call_info_t*, CallType);
+   TR::Node *genSend            (CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq);
+   TR::Node *genSendWithoutBlock(CALL_INFO ci, CALL_CACHE cc);
+   TR::Node *genInvokeSuper     (CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq); 
+   TR::Node *genInvokeBlock     (CALL_INFO ci); 
+
+   // void     dumpCallInfo(CALL_INFO);
 
    virtual void saveStack(int32_t );
    bool valueMayBeModified(TR::Node *sideEffect, TR::Node *node);
@@ -348,7 +352,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    TR::SymbolReference                 *_privateSPSymRef;
    TR::SymbolReference                 *_icSerialSymRef;
    TR::SymbolReference                 *_icValueSymRef;
-   TR::SymbolReference                 *_rb_iseq_struct_selfSymRef;
+   //TR::SymbolReference                 *_rb_iseq_struct_selfSymRef;
    TR::SymbolReference                 *_iseqSymRef;
    TR::SymbolReference                 *_mRubyVMFrozenCoreSymRef;
 

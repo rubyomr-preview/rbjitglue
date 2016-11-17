@@ -59,7 +59,7 @@ Ruby::IlFastpather::IlFastpather(TR::OptimizationManager *manager)
    {
 
    //Initialize VMEventFlag SymRef.
-   TR::DataTypes dt = TR::NoType;
+   TR::DataType dt = TR::NoType;
    switch (sizeof(rb_event_flag_t))
       {
       case 4:
@@ -237,6 +237,7 @@ Ruby::IlFastpather::fastpathTrace(TR::TreeTop *tt, TR::Node *node)
 void
 Ruby::IlFastpather::fastpathPlusMinus(TR::TreeTop *tt, TR::Node *node, bool isPlus)
    {
+#if 0
 
    auto* block = tt->getEnclosingBlock();
 
@@ -352,6 +353,9 @@ Ruby::IlFastpather::fastpathPlusMinus(TR::TreeTop *tt, TR::Node *node, bool isPl
    // comp()->verifyTrees();
    // comp()->verifyBlocks();
    // comp()->verifyCFG();
+#else
+   TR_ASSERT_FATAL(false, "Fastpathing is disabled because of 2.2-2.4 changes"); 
+#endif
    }
 
 /**
@@ -446,6 +450,7 @@ Ruby::IlFastpather::createMultiDiamond(TR::TreeTop *splitTT,
 void
 Ruby::IlFastpather::fastpathGE(TR::TreeTop *tt, TR::Node *origif)
    {
+#if 0 
    auto* block = tt->getEnclosingBlock();
 
    if (!performTransformation(comp(), "%s Fastpathing %s on TT %p\n", OPT_DETAILS, "GE", tt))
@@ -528,6 +533,10 @@ Ruby::IlFastpather::fastpathGE(TR::TreeTop *tt, TR::Node *origif)
    gotoNode->setBranchDestination(Bfallth->getEntry());
 
    return; 
+#else 
+   TR_ASSERT_FATAL(false, "Fastpathing disabled for 2.2-2.4 changes"); 
+   return;
+#endif
    }
 
 /**

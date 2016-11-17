@@ -20,22 +20,15 @@
 #define RUBYBYTECODEITERATOR_HPP
 
 #include "ilgen/ByteCodeIterator.hpp"
-#include "ruby/env/RubyFE.hpp"
-#include "ruby/env/RubyMethod.hpp"
+#include "env/RubyFE.hpp"
+#include "env/RubyMethod.hpp"
+#include "env/VMHeaders.hpp" 
 #include "il/Symbol.hpp"
 #include "il/symbol/LabelSymbol.hpp"
 #include "il/symbol/MethodSymbol.hpp"
 #include "il/symbol/ResolvedMethodSymbol.hpp"
 #include "il/symbol/RegisterMappedSymbol.hpp"
 #include "il/symbol/StaticSymbol.hpp"
-
-/* Ruby */
-#include "ruby.h"
-#include "vm_core.h"
-#include "vm_exec.h"
-#include "insns.inc"
-#include "iseq.h" 
-
 
 typedef VALUE RubyByteCode;
 
