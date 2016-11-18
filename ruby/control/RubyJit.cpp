@@ -246,6 +246,18 @@ static void accumulateAndPrintDebugCounters(TR_RubyFE& fe)
       }
    }
 
+/**
+ * Dumps information relevant to a crash.
+ */
+void jitCrashReport() 
+   {
+   auto &fe = TR_RubyFE::singleton();
+
+   // Dump the debug counters: Can be very useful to 
+   // investigate failures that are suspected to be 
+   // related to the entry switch! 
+   accumulateAndPrintDebugCounters(fe);
+   }
 
 int jitTerminate(void *)
    {
@@ -399,6 +411,16 @@ VALUE jit_dispatch(rb_thread_t *th, jit_method_t code)
    return compiledCodeDispatch(th, code,
                                fe.jitConfig()->getPseudoTOC());
 #endif
+   }
+
+/**
+ * Invoked when Ruby crashes from the Ruby crash reporter. 
+ *
+ * Dump information of relevance to a crash!
+ */
+void jit_crash(void*) 
+   {
+   jitCrashReport();
    }
 
 } /* extern C */
