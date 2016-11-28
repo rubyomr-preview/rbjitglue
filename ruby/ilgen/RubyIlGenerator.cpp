@@ -1750,8 +1750,8 @@ RubyIlGenerator::putspecialobject(rb_num_t value_type)
 TR::Node *
 RubyIlGenerator::getclassvariable(ID id)
    {
-   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 2,
-                       load_CFP_ISeq(),
+   //  val = rb_cvar_get(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id);
+   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 1,
                        loadEP());
    auto klass = genCall(RubyHelper_vm_get_cvar_base, TR::Node::xcallOp(), 2,
                         cref,
@@ -1764,13 +1764,17 @@ RubyIlGenerator::getclassvariable(ID id)
 void
 RubyIlGenerator::setclassvariable(ID id)
    {
+   // vm_ensure_not_refinement_module(GET_SELF());
+   //  rb_cvar_set(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id, val);
    auto val = pop();
-   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 2,
-                       load_CFP_ISeq(),
+
+   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 1,
                        loadEP());
+
    auto klass = genCall(RubyHelper_vm_get_cvar_base, TR::Node::xcallOp(), 2,
                         cref,
                         loadCFP());
+
    genCall(RubyHelper_rb_cvar_set, TR::Node::xcallOp(), 3,
            klass,
            TR::Node::xconst(id),
