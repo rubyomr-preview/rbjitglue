@@ -839,15 +839,10 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
 
          case BIN(getspecial):                  push(getspecial((rb_num_t)getOperand(1), (rb_num_t)getOperand(2)));  _bcIndex += len; break;
          case BIN(setspecial):                  setspecial((rb_num_t)getOperand(1));                                 _bcIndex += len; break;
-         // Disabled for Ruby 2.4 until fixed 
-         // case BIN(getclassvariable):            push(getclassvariable((ID)getOperand(1)));                           _bcIndex += len; break;
-         // case BIN(setclassvariable):            setclassvariable((ID)getOperand(1));                                 _bcIndex += len; break;
          case BIN(putspecialobject):            push(putspecialobject((rb_num_t)getOperand(1)));                     _bcIndex += len; break;
 
          case BIN(checkmatch):                  push(checkmatch((rb_num_t)getOperand(1)));                           _bcIndex += len; break;
 
-//         case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
-//
          case BIN(newhash):                     push(newhash((rb_num_t)getOperand(1))); _bcIndex += len; break;
 
          case BIN(newrange):                    push(newrange((rb_num_t)getOperand(1))); _bcIndex += len; break;
@@ -859,11 +854,6 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(jump):                        _bcIndex = jump(getOperand(1)); break;
          case BIN(branchif):                    _bcIndex = conditionalJump(true /* branchIfTrue*/, getOperand(1)); break;
          case BIN(branchunless):                _bcIndex = conditionalJump(false/*!branchIfTrue*/, getOperand(1)); break;
-
-         // Disable inline cache opcodes until updated for 2.3 
-         // case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
-         // case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
-
          case BIN(opt_regexpmatch1):            push(opt_regexpmatch1(getOperand(1))); _bcIndex += len; break;
          case BIN(opt_regexpmatch2):            push(opt_regexpmatch2((CALL_INFO)getOperand(1), getOperand(2))); _bcIndex += len; break;
 
@@ -907,12 +897,26 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(invokeblock):
             push(genInvokeBlock((CALL_INFO)getOperand(1)));        _bcIndex += len; break;
 
-         // TODO: BIN(defineclass):
-         // TODO: BIN(opt_str_freeze):
-         // TODO: BIN(once):
-         // TODO: BIN(opt_case_dispatch):
-         // TODO: BIN(opt_call_c_function):
-         // TODO: BIN(bitblt):
+         case BIN(getclassvariable):            push(getclassvariable((ID)getOperand(1)));                           _bcIndex += len; break;
+         case BIN(setclassvariable):            setclassvariable((ID)getOperand(1));                                 _bcIndex += len; break;
+         
+         case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
+         case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
+         
+         // case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
+
+         // BIN(freezestring)
+         // BIN(reverse)
+         // BIN(checkkeyword)
+         // BIN(defineclass)
+         // BIN(opt_str_freeze)
+         // BIN(opt_newarray_max)
+         // BIN(opt_newarray_min)
+         // BIN(branchnil)
+         // BIN(once)
+         // BIN(opt_case_dispatch)
+         // BIN(opt_call_c_function)
+         // BIN(bitblt)
 
          default:
             traceMsg(comp(), "ABORTING COMPILE: Unsupported YARV instruction %d %s\n", (int)insn, byteCodeName(insn));
