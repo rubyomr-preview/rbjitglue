@@ -105,6 +105,7 @@ RubyIlGenerator::RubyIlGenerator(TR::IlGeneratorMethodDetails &details,
    _selfSymRef       = symRefTab.createRubyNamedShadowSymRef("self",      TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, self), false);
    _icSerialSymRef   = symRefTab.createRubyNamedShadowSymRef("ic_serial", TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(struct iseq_inline_cache_entry, ic_serial),        false);
    _icValueSymRef    = symRefTab.createRubyNamedShadowSymRef("ic_value",  TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(struct iseq_inline_cache_entry, ic_value.value),   false);
+   _icCrefSymRef     = symRefTab.createRubyNamedShadowSymRef("ic_cref",   TR::Address,              sizeof(void*),       offsetof(struct iseq_inline_cache_entry, ic_cref), false);                    
 
    // _rb_iseq_struct_selfSymRef =
    //                    symRefTab.createRubyNamedShadowSymRef("rb_iseq_struct->self",      TR_RubyFE::slotType(),  TR_RubyFE::SLOTSIZE, offsetof(rb_iseq_struct, self),     false);  //self in rb_iseq_struct does not change across calls.
@@ -1964,7 +1965,9 @@ int32_t
 RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)
    {
    // The logic is as follows:
-   // if (ic->ic_state == global_constant_state)  // cache hit
+   // if (ic->ic_serial == global_constant_state && 
+   //     (ic->ic_cref == NULL ||
+   //      ic->ic_cref == rb_vm_get_cref(GET_EP())))  // cache hit
    //      { push(ic->ic_value.value); branch to offset; }
    // else { push(Qnil); }
    //
@@ -1974,17 +1977,67 @@ RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)
    // ificmpne -> destination
    //    => cache-hit
    //    0
-
+   //
+   // This way the operand stack is properly managed by the byte code iterator
+   // framework. 
+   //
+   // Because cache-hit is a reasonable complex conditional, it would be nice if 
+   // we were able to generate a short circuiting conditional here. However, using
+   // ByteCodeIteratorWithState it's challenging to generate multiple blocks from a
+   // single bytecode. 
+   //
+   // Therefore, as a workaround here we generate a single complex conditional to 
+   // represent the inline cache hit condition. We get away with this in part because 
+   // we can ignore any ordering constraints from rb_vm_get_cref. 
+   // 
+   // ificmpne ->  
+   // -- iand 
+   // -- --  lcmpeq 
+   // -- -- -- <load > 
+   // -- -- -- <lcall> 
+   // -- --  ior 
+   // -- -- -- lcmpeq 
+   // -- -- -- -- <load> 
+   // -- -- -- -- <lconst 0>
+   // -- -- -- -lcmpeq 
+   // -- -- -- -- <load>
+   // -- -- -- -- <lcall> 
+   //
    // TODO: Q: How important is it for us to push Qnil? Usually that value
    // will be discarded on the miss path. Need to investigate.
 
-   // This way the operand stack is properly managed by the byte code iterator
-   // framework
    TR::Node *icNode = TR::Node::aconst((uintptr_t)ic);
-   TR::Node *hit_p = TR::Node::create(TR::lcmpeq, 2,
-                                        loadICSerial(icNode),
-                                        getGlobalConstantState());
-   TR::Node *ternary = TR::Node::xternary(hit_p,
+
+
+   // ic->ic_serial == global_constant_state
+   TR::Node *serial_check = TR::Node::create(TR::lcmpeq, 2,
+                                             loadICSerial(icNode),
+                                             getGlobalConstantState());
+
+   // ic->ic_cref == NULL
+   TR::Node* cref         = loadICCref(icNode); 
+   TR::Node* cref_null    = TR::Node::create(TR::lcmpeq, 2,
+                                             cref,
+                                             TR::Node::xconst(0));
+
+   // ic->ic_cref == rb_vm_get_cref(GET_EP())
+   TR::Node* cref_call  = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 1,
+                       loadEP());
+   TR::Node* cref_equal = TR::Node::create(TR::lcmpeq, 2,
+                                           cref,
+                                           cref_call); 
+
+   // (ic->ic_cref == NULL || 
+   //  ic->ic_cref == rb_vm_get_cref(GET_EP()))
+   TR::Node* ornode = TR::Node::create(TR::ior, 2, 
+                                       cref_null, 
+                                       cref_equal); 
+
+   TR::Node* andNode = TR::Node::create(TR::iand, 2, 
+                                       serial_check, 
+                                       ornode);
+
+   TR::Node *ternary = TR::Node::xternary(andNode,
                                  loadICValue(icNode),
                                  TR::Node::xconst(Qnil));
    // TODO: it would be nice to be able to put a bias hint on the ternary
@@ -2003,7 +2056,7 @@ RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)
    TR::TreeTop *dest = genTarget(branchDestination(_bcIndex));
 
    TR::Node *ifNode = TR::Node::createif(TR::ificmpne,
-                                           hit_p,
+                                           andNode,
                                            TR::Node::iconst(0),
                                            dest);
    genTreeTop(ifNode);
@@ -2016,7 +2069,7 @@ RubyIlGenerator::setinlinecache(IC ic)
    auto value = pop();
    TR::Node *icNode = TR::Node::aconst((uintptr_t)ic);
    genCall(RubyHelper_vm_setinlinecache, TR::call, 3,
-           loadCFP(), icNode, value);
+           loadThread(), icNode, value);
    return value;
    }
 
