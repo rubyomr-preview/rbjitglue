@@ -136,8 +136,18 @@ RubyIlGenerator::logAbort(const char * logMessage,
    {
    TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/%s",
                                                           counterReason));
-   fe()->outOfMemory(comp(), logMessage);
-   TR_ASSERT(0, "Compilation abort failed! %s", logMessage);
+
+   if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseOptions))
+         {
+         TR_VerboseLog::writeLineLocked(TR_Vlog_COMPFAIL,
+            "<JIT: %s cannot be translated: %s (%s)>", 
+            comp()->signature(),
+            logMessage, 
+            counterReason);
+         }
+       
+   traceMsg(comp(), "%s (%s)", logMessage, counterReason);
+   throw TR::CompilationException();
    }
 
 /**
@@ -154,6 +164,17 @@ RubyIlGenerator::logAbort(const char * logMessage,
    TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/%s/%s",
                                                           counterReason,
                                                           counterSubreason));
+
+   if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseOptions))
+         {
+         TR_VerboseLog::writeLineLocked(TR_Vlog_COMPFAIL,
+            "<JIT: %s cannot be translated: %s (%s/%s)>", 
+            comp()->signature(),
+            logMessage,
+            counterReason,
+            counterSubreason);
+         }
+
 
    traceMsg(comp(), logMessage);
    throw TR::CompilationException();
