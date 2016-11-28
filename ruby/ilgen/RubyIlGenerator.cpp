@@ -105,6 +105,7 @@ RubyIlGenerator::RubyIlGenerator(TR::IlGeneratorMethodDetails &details,
    _selfSymRef       = symRefTab.createRubyNamedShadowSymRef("self",      TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(rb_control_frame_t, self), false);
    _icSerialSymRef   = symRefTab.createRubyNamedShadowSymRef("ic_serial", TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(struct iseq_inline_cache_entry, ic_serial),        false);
    _icValueSymRef    = symRefTab.createRubyNamedShadowSymRef("ic_value",  TR_RubyFE::slotType(),    TR_RubyFE::SLOTSIZE, offsetof(struct iseq_inline_cache_entry, ic_value.value),   false);
+   _icCrefSymRef     = symRefTab.createRubyNamedShadowSymRef("ic_cref",   TR::Address,              sizeof(void*),       offsetof(struct iseq_inline_cache_entry, ic_cref), false);                    
 
    // _rb_iseq_struct_selfSymRef =
    //                    symRefTab.createRubyNamedShadowSymRef("rb_iseq_struct->self",      TR_RubyFE::slotType(),  TR_RubyFE::SLOTSIZE, offsetof(rb_iseq_struct, self),     false);  //self in rb_iseq_struct does not change across calls.
@@ -136,8 +137,18 @@ RubyIlGenerator::logAbort(const char * logMessage,
    {
    TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/%s",
                                                           counterReason));
-   fe()->outOfMemory(comp(), logMessage);
-   TR_ASSERT(0, "Compilation abort failed! %s", logMessage);
+
+   if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseOptions))
+         {
+         TR_VerboseLog::writeLineLocked(TR_Vlog_COMPFAIL,
+            "<JIT: %s cannot be translated: %s (%s)>", 
+            comp()->signature(),
+            logMessage, 
+            counterReason);
+         }
+       
+   traceMsg(comp(), "%s (%s)", logMessage, counterReason);
+   throw TR::CompilationException();
    }
 
 /**
@@ -154,6 +165,17 @@ RubyIlGenerator::logAbort(const char * logMessage,
    TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/%s/%s",
                                                           counterReason,
                                                           counterSubreason));
+
+   if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseOptions))
+         {
+         TR_VerboseLog::writeLineLocked(TR_Vlog_COMPFAIL,
+            "<JIT: %s cannot be translated: %s (%s/%s)>", 
+            comp()->signature(),
+            logMessage,
+            counterReason,
+            counterSubreason);
+         }
+
 
    traceMsg(comp(), logMessage);
    throw TR::CompilationException();
@@ -817,15 +839,10 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
 
          case BIN(getspecial):                  push(getspecial((rb_num_t)getOperand(1), (rb_num_t)getOperand(2)));  _bcIndex += len; break;
          case BIN(setspecial):                  setspecial((rb_num_t)getOperand(1));                                 _bcIndex += len; break;
-         // Disabled for Ruby 2.4 until fixed 
-         // case BIN(getclassvariable):            push(getclassvariable((ID)getOperand(1)));                           _bcIndex += len; break;
-         // case BIN(setclassvariable):            setclassvariable((ID)getOperand(1));                                 _bcIndex += len; break;
          case BIN(putspecialobject):            push(putspecialobject((rb_num_t)getOperand(1)));                     _bcIndex += len; break;
 
          case BIN(checkmatch):                  push(checkmatch((rb_num_t)getOperand(1)));                           _bcIndex += len; break;
 
-//         case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
-//
          case BIN(newhash):                     push(newhash((rb_num_t)getOperand(1))); _bcIndex += len; break;
 
          case BIN(newrange):                    push(newrange((rb_num_t)getOperand(1))); _bcIndex += len; break;
@@ -837,11 +854,6 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(jump):                        _bcIndex = jump(getOperand(1)); break;
          case BIN(branchif):                    _bcIndex = conditionalJump(true /* branchIfTrue*/, getOperand(1)); break;
          case BIN(branchunless):                _bcIndex = conditionalJump(false/*!branchIfTrue*/, getOperand(1)); break;
-
-         // Disable inline cache opcodes until updated for 2.3 
-         // case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
-         // case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
-
          case BIN(opt_regexpmatch1):            push(opt_regexpmatch1(getOperand(1))); _bcIndex += len; break;
          case BIN(opt_regexpmatch2):            push(opt_regexpmatch2((CALL_INFO)getOperand(1), getOperand(2))); _bcIndex += len; break;
 
@@ -885,12 +897,26 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(invokeblock):
             push(genInvokeBlock((CALL_INFO)getOperand(1)));        _bcIndex += len; break;
 
-         // TODO: BIN(defineclass):
-         // TODO: BIN(opt_str_freeze):
-         // TODO: BIN(once):
-         // TODO: BIN(opt_case_dispatch):
-         // TODO: BIN(opt_call_c_function):
-         // TODO: BIN(bitblt):
+         case BIN(getclassvariable):            push(getclassvariable((ID)getOperand(1)));                           _bcIndex += len; break;
+         case BIN(setclassvariable):            setclassvariable((ID)getOperand(1));                                 _bcIndex += len; break;
+         
+         case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
+         case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
+         
+         // case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
+
+         // BIN(freezestring)
+         // BIN(reverse)
+         // BIN(checkkeyword)
+         // BIN(defineclass)
+         // BIN(opt_str_freeze)
+         // BIN(opt_newarray_max)
+         // BIN(opt_newarray_min)
+         // BIN(branchnil)
+         // BIN(once)
+         // BIN(opt_case_dispatch)
+         // BIN(opt_call_c_function)
+         // BIN(bitblt)
 
          default:
             traceMsg(comp(), "ABORTING COMPILE: Unsupported YARV instruction %d %s\n", (int)insn, byteCodeName(insn));
@@ -1728,8 +1754,8 @@ RubyIlGenerator::putspecialobject(rb_num_t value_type)
 TR::Node *
 RubyIlGenerator::getclassvariable(ID id)
    {
-   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 2,
-                       load_CFP_ISeq(),
+   //  val = rb_cvar_get(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id);
+   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 1,
                        loadEP());
    auto klass = genCall(RubyHelper_vm_get_cvar_base, TR::Node::xcallOp(), 2,
                         cref,
@@ -1742,13 +1768,17 @@ RubyIlGenerator::getclassvariable(ID id)
 void
 RubyIlGenerator::setclassvariable(ID id)
    {
+   // vm_ensure_not_refinement_module(GET_SELF());
+   //  rb_cvar_set(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id, val);
    auto val = pop();
-   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 2,
-                       load_CFP_ISeq(),
+
+   auto cref = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 1,
                        loadEP());
+
    auto klass = genCall(RubyHelper_vm_get_cvar_base, TR::Node::xcallOp(), 2,
                         cref,
                         loadCFP());
+
    genCall(RubyHelper_rb_cvar_set, TR::Node::xcallOp(), 3,
            klass,
            TR::Node::xconst(id),
@@ -1943,7 +1973,9 @@ int32_t
 RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)
    {
    // The logic is as follows:
-   // if (ic->ic_state == global_constant_state)  // cache hit
+   // if (ic->ic_serial == global_constant_state && 
+   //     (ic->ic_cref == NULL ||
+   //      ic->ic_cref == rb_vm_get_cref(GET_EP())))  // cache hit
    //      { push(ic->ic_value.value); branch to offset; }
    // else { push(Qnil); }
    //
@@ -1953,17 +1985,67 @@ RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)
    // ificmpne -> destination
    //    => cache-hit
    //    0
-
+   //
+   // This way the operand stack is properly managed by the byte code iterator
+   // framework. 
+   //
+   // Because cache-hit is a reasonable complex conditional, it would be nice if 
+   // we were able to generate a short circuiting conditional here. However, using
+   // ByteCodeIteratorWithState it's challenging to generate multiple blocks from a
+   // single bytecode. 
+   //
+   // Therefore, as a workaround here we generate a single complex conditional to 
+   // represent the inline cache hit condition. We get away with this in part because 
+   // we can ignore any ordering constraints from rb_vm_get_cref. 
+   // 
+   // ificmpne ->  
+   // -- iand 
+   // -- --  lcmpeq 
+   // -- -- -- <load > 
+   // -- -- -- <lcall> 
+   // -- --  ior 
+   // -- -- -- lcmpeq 
+   // -- -- -- -- <load> 
+   // -- -- -- -- <lconst 0>
+   // -- -- -- -lcmpeq 
+   // -- -- -- -- <load>
+   // -- -- -- -- <lcall> 
+   //
    // TODO: Q: How important is it for us to push Qnil? Usually that value
    // will be discarded on the miss path. Need to investigate.
 
-   // This way the operand stack is properly managed by the byte code iterator
-   // framework
    TR::Node *icNode = TR::Node::aconst((uintptr_t)ic);
-   TR::Node *hit_p = TR::Node::create(TR::lcmpeq, 2,
-                                        loadICSerial(icNode),
-                                        getGlobalConstantState());
-   TR::Node *ternary = TR::Node::xternary(hit_p,
+
+
+   // ic->ic_serial == global_constant_state
+   TR::Node *serial_check = TR::Node::create(TR::lcmpeq, 2,
+                                             loadICSerial(icNode),
+                                             getGlobalConstantState());
+
+   // ic->ic_cref == NULL
+   TR::Node* cref         = loadICCref(icNode); 
+   TR::Node* cref_null    = TR::Node::create(TR::lcmpeq, 2,
+                                             cref,
+                                             TR::Node::xconst(0));
+
+   // ic->ic_cref == rb_vm_get_cref(GET_EP())
+   TR::Node* cref_call  = genCall(RubyHelper_rb_vm_get_cref, TR::Node::xcallOp(), 1,
+                       loadEP());
+   TR::Node* cref_equal = TR::Node::create(TR::lcmpeq, 2,
+                                           cref,
+                                           cref_call); 
+
+   // (ic->ic_cref == NULL || 
+   //  ic->ic_cref == rb_vm_get_cref(GET_EP()))
+   TR::Node* ornode = TR::Node::create(TR::ior, 2, 
+                                       cref_null, 
+                                       cref_equal); 
+
+   TR::Node* andNode = TR::Node::create(TR::iand, 2, 
+                                       serial_check, 
+                                       ornode);
+
+   TR::Node *ternary = TR::Node::xternary(andNode,
                                  loadICValue(icNode),
                                  TR::Node::xconst(Qnil));
    // TODO: it would be nice to be able to put a bias hint on the ternary
@@ -1982,7 +2064,7 @@ RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)
    TR::TreeTop *dest = genTarget(branchDestination(_bcIndex));
 
    TR::Node *ifNode = TR::Node::createif(TR::ificmpne,
-                                           hit_p,
+                                           andNode,
                                            TR::Node::iconst(0),
                                            dest);
    genTreeTop(ifNode);
@@ -1995,7 +2077,7 @@ RubyIlGenerator::setinlinecache(IC ic)
    auto value = pop();
    TR::Node *icNode = TR::Node::aconst((uintptr_t)ic);
    genCall(RubyHelper_vm_setinlinecache, TR::call, 3,
-           loadCFP(), icNode, value);
+           loadThread(), icNode, value);
    return value;
    }
 

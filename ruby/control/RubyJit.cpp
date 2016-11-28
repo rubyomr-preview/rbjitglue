@@ -345,7 +345,7 @@ void *jit_compile(rb_iseq_t *iseq)
        && iseq->jit.body_info
        && iseq->jit.body_info->next)
       {
-      if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerbosePerformance))
+      if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseOptions))
          TR_VerboseLog::writeLineLocked(TR_Vlog_INFO,"%s%s @ %p already compiled twice, not compiling again",
                                         name,
                                         truncated ? "(truncated)" : "",
@@ -365,8 +365,7 @@ void *jit_compile(rb_iseq_t *iseq)
        iseq->body->param.flags.has_kwrest
        )
       {
-      auto jitConfig = fe.jitConfig();
-      if (jitConfig && jitConfig->options.verboseFlags != 0)
+      if (TR::Options::getVerboseOption(TR_VerboseOptions))
          {
          TR_VerboseLog::writeLineLocked(TR_Vlog_COMPFAIL,
             "<JIT: %s %s cannot be translated: complex arguments:"

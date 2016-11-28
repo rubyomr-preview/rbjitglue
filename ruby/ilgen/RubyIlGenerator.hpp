@@ -261,6 +261,8 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
       { return TR::Node::xloadi(_icSerialSymRef, ic, fe()); }
    TR::Node *loadICValue(TR::Node *ic)
       { return TR::Node::xloadi(_icValueSymRef, ic, fe()); }
+   TR::Node *loadICCref(TR::Node *ic)
+      { return TR::Node::xloadi(_icCrefSymRef, ic, fe()); }
    TR::Node *getGlobalConstantState()
       { return TR::Node::createLoad(_gcsSymRef); }
 
@@ -352,6 +354,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    TR::SymbolReference                 *_privateSPSymRef;
    TR::SymbolReference                 *_icSerialSymRef;
    TR::SymbolReference                 *_icValueSymRef;
+   TR::SymbolReference                 *_icCrefSymRef;
    //TR::SymbolReference                 *_rb_iseq_struct_selfSymRef;
    TR::SymbolReference                 *_iseqSymRef;
    TR::SymbolReference                 *_mRubyVMFrozenCoreSymRef;
