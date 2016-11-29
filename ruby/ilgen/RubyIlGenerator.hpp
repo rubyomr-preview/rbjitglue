@@ -295,6 +295,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    TR::Node *setinlinecache(IC ic);
    TR::Node *putstring     (VALUE str);
    TR::Node *putiseq       (ISEQ iseq);
+   TR::Node *freezestring  (VALUE debugInfo);
    TR::Node *checkmatch    (rb_num_t flag);
    TR::Node *toregexp      (rb_num_t opt, rb_num_t cnt);
    TR::Node *opt_regexpmatch1(VALUE r);

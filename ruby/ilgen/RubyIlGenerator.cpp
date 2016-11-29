@@ -615,8 +615,8 @@ RubyIlGenerator::addExceptionTargets(localset &targets)
 
          if (entry.sp != 0 ) // Not sure how we have to handle a non-zero sp in a catch table entry.
             {
-            TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/non_zero_sp_catch_table_entry"));
-            fe()->outOfMemory(comp(), "Aborting compilation based on non-zero sp in local catch table entry\n" );
+            logAbort("Not sure how to handle non-zero stack pointer on entry", "non_zero_sp_catch_table_entry");
+            //unreachable. 
             }
 
          //FIXME: This might be excessive -- we probably can filter
@@ -903,9 +903,9 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
          case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
          
-          case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1))); _bcIndex += len; break;
+         case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1))); _bcIndex += len; break;
 
-         // BIN(freezestring)
+         case BIN(freezestring): push(freezestring((VALUE)getOperand(1))); _bcIndex += len; break; 
          // BIN(reverse)
          // BIN(checkkeyword)
          // BIN(defineclass)
@@ -1718,6 +1718,21 @@ RubyIlGenerator::putiseq(ISEQ iseq)
    {
    TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
    return iseqNode;  
+   }
+
+TR::Node *
+RubyIlGenerator::freezestring(VALUE debugInfo)
+   {
+   TR::Node* str = pop(); 
+   if (!NIL_P(debugInfo)) { 
+      genTreeTop(genCall(RubyHelper_rb_ivar_set, TR::Node::xcallOp(), 3, 
+                       str, 
+                       TR::Node::iconst(id_debug_created_info), 
+                       TR::Node::aconst((uintptr_t)debugInfo)));  
+   }
+   TR::Node* call = genCall(RubyHelper_rb_str_freeze, TR::Node::xcallOp(), 1, str); 
+   genTreeTop(call);
+   return call; 
    }
 
 TR::Node *
