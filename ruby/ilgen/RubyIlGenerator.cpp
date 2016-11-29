@@ -724,23 +724,7 @@ RubyIlGenerator::walker(TR::Block *prevBlock)
          if (isGenerated(i) && blocks(i) && !blocks(i)->isAdded())
             nextBlock = blocks(i);
 
-      // If an exception range ends with an if and the fall through is
-      // in the main-line code then we have to generate a fall through block
-      // which contains a goto to jump back to the main-line code.
-      //
       TR::Node * lastRealNode = block->getLastRealTreeTop()->getNode();
-      if (!nextBlock && lastRealNode->getOpCode().isIf())
-         {
-         nextBlock = TR::Block::createEmptyBlock(comp());
-         i = lastIndex;
-         TR_ASSERT(blocks(i + 3), "can't find the fall thru block");
-         nextBlock->append(TR::TreeTop::create(comp(),
-                                               TR::Node::create(lastRealNode,
-                                                                TR::Goto,
-                                                                0,
-                                                                blocks(i + 3)->getEntry())));
-         }
-
       block->getExit()->getNode()->copyByteCodeInfo(lastRealNode);
       cfg()->insertBefore(block, nextBlock);
       }
