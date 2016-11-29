@@ -903,7 +903,7 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
          case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
          
-         // case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
+          case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1))); _bcIndex += len; break;
 
          // BIN(freezestring)
          // BIN(reverse)
@@ -1713,12 +1713,12 @@ RubyIlGenerator::setspecial(rb_num_t key)
          obj);
    }
 
-// TR::Node *
-// RubyIlGenerator::putiseq(ISEQ iseq)
-//    {
-//    TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
-//    return xloadi(_rb_iseq_struct_selfSymRef, iseqNode);
-//    }
+TR::Node *
+RubyIlGenerator::putiseq(ISEQ iseq)
+   {
+   TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
+   return iseqNode;  
+   }
 
 TR::Node *
 RubyIlGenerator::putspecialobject(rb_num_t value_type)
