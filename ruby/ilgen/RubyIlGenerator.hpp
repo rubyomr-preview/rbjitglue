@@ -203,7 +203,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
 
    bool genILInternal();
    void prependSPPrivatization();
-   TR::Block *walker(TR::Block *prevBlock);
+   void walker();
 
    void indexedWalker(int32_t, int32_t&, int32_t&);
    TR::Block *genExceptionHandlers(TR::Block *prevBlock);

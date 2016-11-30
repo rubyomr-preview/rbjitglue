@@ -665,7 +665,8 @@ RubyIlGenerator::genILInternal()
    if (enableEntrySwitch)
       generateEntryTargets();
 
-   TR::Block *lastBlock = walker(NULL);
+   // Generate main line control flow.
+   walker();
 
    methodSymbol()->setFirstTreeTop(blocks(0)->getEntry());
 
@@ -695,23 +696,30 @@ RubyIlGenerator::genILInternal()
    return true;
    }
 
-TR::Block *
-RubyIlGenerator::walker(TR::Block *prevBlock)
+void
+RubyIlGenerator::walker()
    {
    int32_t lastIndex = 0, firstIndex = 0;
    TR_ASSERT(_bcIndex == 0, "first bcIndex isn't zero");
 
+   // Generate cont
    indexedWalker(0, firstIndex, lastIndex);
+   TR_ASSERT(firstIndex == 0, "First index wasn't zero. Not sure how to handle this"); 
 
-   // join the basic blocks
+   // Stitch together the blocks and generated the initial control flow graph.
+   //
+   // Initial these to the first block. 
    TR::Block * lastBlock, * nextBlock, * block = blocks(firstIndex);
-   if (firstIndex == 0)
-      cfg()->addEdge(cfg()->getStart(), block);
-   else
-      prevBlock->getExit()->join(block->getEntry());
+  
+    
+   // Add a CFG edge from the start block to the first block.  
+   cfg()->addEdge(cfg()->getStart(), block);
 
-   for (int32_t i = firstIndex; block; lastBlock = block, block = nextBlock)
+   for (int32_t currentIndex = firstIndex; block; block = nextBlock)
       {
+
+      // Walk through the already connected blocks to get to the first 
+      // block with no successor designated. 
       while (block->getNextBlock())
          {
          TR_ASSERT( block->isAdded(), "Block should have already been added\n" );
@@ -720,17 +728,29 @@ RubyIlGenerator::walker(TR::Block *prevBlock)
 
       block->setIsAdded();
 
-      for (nextBlock = 0; !nextBlock && ++i <= lastIndex; )
-         if (isGenerated(i) && blocks(i) && !blocks(i)->isAdded())
-            nextBlock = blocks(i);
+      // Initialize nextBlock to zero 
+      nextBlock = 0; 
 
+      // Figure out the next block: This is looking for the first unadded block in
+      // bytecode order.  
+      // 
+      // If there is no next block, this will cause the outer loop to terminate
+      while (++currentIndex <= lastIndex)
+         {
+         if (isGenerated(currentIndex) && blocks(currentIndex) && !blocks(currentIndex)->isAdded())
+            {
+            nextBlock = blocks(currentIndex);
+            break;
+            }
+         }
+
+      // Propagate bytecode info from generated node to end node. 
       TR::Node * lastRealNode = block->getLastRealTreeTop()->getNode();
-      block->getExit()->getNode()->copyByteCodeInfo(lastRealNode);
+      block->getExit()->getNode()->copyByteCodeInfo(lastRealNode); 
+
+      // Connect to CFG -- nextBlock may be zero here, but the CFG is prepared to handle that
       cfg()->insertBefore(block, nextBlock);
       }
-
-   return lastBlock;
-
    }
 
 /**
