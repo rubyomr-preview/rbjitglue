@@ -321,8 +321,7 @@ RubyIlGenerator::generateEntryTargets()
    const localset& targets = computeEntryTargets();
    for (auto iter = targets.begin(); iter != targets.end(); ++iter)
       {
-      if (trace_enabled)
-         traceMsg(comp(), "generating target %d\n", *iter);
+      traceMsg(comp(), "generating target %d\n", *iter);
 
       genTarget(*iter, false);
       }
@@ -466,7 +465,7 @@ RubyIlGenerator::generateEntrySwitch()
    for (auto iter = targets.begin(); iter != targets.end(); ++iter, ++child)
       {
       traceMsg(comp(), "case (%d * %d = %d) -> %d\n", TR_RubyFE::SLOTSIZE, *iter, TR_RubyFE::SLOTSIZE * *iter,  *iter);
-      auto * target = genSwitchTarget(*iter, block);
+      auto * target = genEntrySwitchTarget(*iter, block);
       switchNode->setAndIncChild(child,
                                  TR::Node::createCase(0, target, TR_RubyFE::SLOTSIZE * *iter));
       }
@@ -488,7 +487,7 @@ RubyIlGenerator::generateEntrySwitch()
  * the privatized stack pointer temp.
  */
 TR::TreeTop*
-RubyIlGenerator::genSwitchTarget(int32_t index, TR::Block* insertBlock)
+RubyIlGenerator::genEntrySwitchTarget(int32_t index, TR::Block* insertBlock)
    {
    const char*  debugCounterName = NULL;
    TR::TreeTop* goto_destination = NULL;
@@ -796,8 +795,7 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
       int32_t len  = byteCodeLength(insn);
 
 
-      if (trace_enabled)
-         traceMsg(comp(), "RubyIlGenerator:: Generating block %d into %p\n", _bcIndex, _block);
+      traceMsg(comp(), "RubyIlGenerator:: Generating bytecode %d %s into block %p. Stack height is %d\n", _bcIndex, byteCodeName(insn), _block, _stack->size());
 
       switch (insn)
          {
@@ -926,7 +924,9 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          // BIN(opt_newarray_min)
          // BIN(branchnil)
          // BIN(once)
-         // BIN(opt_case_dispatch)
+         
+         case BIN(opt_case_dispatch): _bcIndex = genOptCaseDispatch((CDHASH)getOperand(1), (OFFSET)getOperand(2));  break;
+
          // BIN(opt_call_c_function)
          // BIN(bitblt)
 
@@ -970,8 +970,8 @@ RubyIlGenerator::genTreeTop(TR::Node *n, TR::Block* block)
    if (!block)
      block = getCurrentBlock();
 
-   if (trace_enabled)
-      traceMsg(comp(), "Generating Node %p into treetop in block %d (%p)\n", n, block->getNumber(), block);
+   // if (trace_enabled)
+   //    traceMsg(comp(), "Generating Node %p into treetop in block %d (%p)\n", n, block->getNumber(), block);
 
    return TR::Node::genTreeTop(n, block);
    }
@@ -1484,8 +1484,7 @@ RubyIlGenerator::genCall_preparation(CALL_INFO ci, uint32_t numArgs, int32_t& re
       }
 
 
-   if (trace_enabled)
-      traceMsg(comp(), "Creating call at bci=%d\n", _bcIndex);
+   traceMsg(comp(), "Creating call at bci=%d\n", _bcIndex);
 
    TR::Node *recv = NULL;
    if (pending > 0)
@@ -1995,6 +1994,93 @@ RubyIlGenerator::conditionalJump(bool branchIfTrue, int32_t offset)
 
    return findNextByteCodeToGen();
    }
+
+
+static int 
+append_to_map(VALUE key, VALUE value, valuemap* map)
+   {
+   (*map)[key] = value;
+   return ST_CONTINUE;
+   }
+
+
+/**
+ * Given a VALUE that is a Ruby Hash, return the equivalent map. 
+ */
+valuemap*  
+RubyIlGenerator::hash_to_map(TR::StackMemoryRegion& region, VALUE hash) 
+   {
+    valuemap* map = new (region) valuemap(std::less<VALUE>(),
+                    TR::typed_allocator<std::pair<VALUE,VALUE>, TR::RawAllocator>(TR::RawAllocator())); 
+   rb_hash_foreach(hash, (int(*)(...))&append_to_map, (VALUE)map); 
+   return map; 
+   }
+
+/** 
+ * Generates the control flow for opt_case_dispatch. 
+ *
+ * This works by using a helper routine implemented in the VM that computes the 
+ * appropriate destination edge, then using a switch statement; in essence
+ *
+ *     int dest = vm_compute_case_dest(hash, else_offset, key) 
+ *     switch (dest) { 
+ *     ...
+ *     default: fallthrough
+ *     }
+ *
+ * This is implemented this way for two reasons: 
+ * 
+ * 1. It eliminates the need to generate new blocks and control flow during ilgen,
+ *    which will be important for future implementation of OSR, 
+ * 2. It allows a simpler implementation, that is then amenable to future fastpathing
+ *    efforts. 
+ *
+ * The implementation assumes (correctly I believe) that the destination 
+ * hash is immutable and total, covering all legal cases. 
+ */
+int32_t
+RubyIlGenerator::genOptCaseDispatch(CDHASH hash, OFFSET else_offset)  
+      {
+      TR::StackMemoryRegion stackMemoryRegion(*trMemory());
+      auto targets = hash_to_map(stackMemoryRegion, hash); 
+      traceMsg(comp(), "case_dispatch_map {\n"); 
+      for (auto entry : *targets) {
+         traceMsg(comp(), "\t%d -> +%d,\n", entry.first, FIX2INT(entry.second)); 
+      }
+      traceMsg(comp(), "}\n"); 
+
+      TR::Node* key = pop(); 
+      TR::Node* selector = genCall(RubyHelper_vm_compute_case_dest, TR::icall, 3, 
+                                   TR::Node::aconst((uintptr_t)hash), 
+                                   TR::Node::aconst((uintptr_t)else_offset), 
+                                   key); 
+
+      // Default case is to fallthrough to the next bytecode. 
+      TR::Node  * defaultCase      = TR::Node::createCase(0, genTarget(_bcIndex + byteCodeLength(current())) );
+
+
+      TR::Node  * switchNode       = TR::Node::create(TR::lookup, 2 +
+                                                   targets->size(), selector,
+                                                   defaultCase);
+
+      int32_t child = 2;  //First two children are selector and default case.
+      for (auto iter = targets->begin(); iter != targets->end(); ++iter, ++child)
+         {
+         auto targetIndex = FIX2INT(iter->second); 
+         auto bclen       = byteCodeLength(current()); 
+         traceMsg(comp(), "case %d -> (%d + %d + %d= %d)\n", iter->first, bclen, targetIndex , _bcIndex, bclen + targetIndex + _bcIndex);
+
+         // When the JUMP is executed, we've already advanced PC by bclen,
+         // so need to take that into account when computing the destination. 
+         auto * target = genTarget(bclen + targetIndex + _bcIndex);
+
+         switchNode->setAndIncChild(child,
+                                    TR::Node::createCase(0, target, iter->first));
+         }
+
+      genTreeTop(switchNode); 
+      return findNextByteCodeToGen(); 
+      }
 
 int32_t
 RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)

@@ -146,6 +146,7 @@ initializeAllHelpers(struct rb_vm_struct *vm, TR_RubyJitConfig *jitConfig)
    initHelper(vm_jit_stack_check); 
    initHelper(rb_str_freeze);
    initHelper(rb_ivar_set);
+   initHelper(vm_compute_case_dest); 
    }
 
 static void
