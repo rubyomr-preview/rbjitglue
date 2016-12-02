@@ -51,8 +51,14 @@ typedef std::set<int32_t, std::less<int32_t>,
 
 // Map type 
 typedef std::map<int32_t, int32_t, std::less<int32_t>,
-         TR::typed_allocator<std::pair<int32_t, TR::Node*>, TR::RawAllocator>
+         TR::typed_allocator<std::pair<int32_t, int32_t>, TR::RawAllocator>
         > intmap; 
+
+//Value Map type 
+typedef std::map<VALUE, VALUE, std::less<VALUE>,
+         TR::typed_allocator<std::pair<VALUE, VALUE>, TR::RawAllocator>
+        > valuemap; 
+
 
 
 /**
@@ -203,7 +209,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
 
    bool genILInternal();
    void prependSPPrivatization();
-   TR::Block *walker(TR::Block *prevBlock);
+   void walker();
 
    void indexedWalker(int32_t, int32_t&, int32_t&);
    TR::Block *genExceptionHandlers(TR::Block *prevBlock);
@@ -211,7 +217,8 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    void                 generateEntrySwitch(); 
    localset             computeEntryTargets(); 
    void                 generateEntryTargets();
-   TR::TreeTop*         genSwitchTarget(int32_t,TR::Block*);
+
+   TR::TreeTop*         genEntrySwitchTarget(int32_t,TR::Block*);
 
    TR::SymbolReference *getStackSymRef(int32_t stackHeight);
    TR::SymbolReference *getLocalSymRef(lindex_t idx, rb_num_t level);
@@ -295,6 +302,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    TR::Node *setinlinecache(IC ic);
    TR::Node *putstring     (VALUE str);
    TR::Node *putiseq       (ISEQ iseq);
+   TR::Node *freezestring  (VALUE debugInfo);
    TR::Node *checkmatch    (rb_num_t flag);
    TR::Node *toregexp      (rb_num_t opt, rb_num_t cnt);
    TR::Node *opt_regexpmatch1(VALUE r);
@@ -311,6 +319,7 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    int32_t genLeave(TR::Node *retval);
    int32_t genThrow(rb_num_t throw_state, TR::Node *throwobj);
    int32_t genGoto(int32_t target);
+   int32_t genOptCaseDispatch(CDHASH hash, OFFSET else_offset); 
    void    genAsyncCheck();
    void    genRubyStackAdjust(int32_t);
    void    rematerializeSP();
@@ -336,6 +345,8 @@ class RubyIlGenerator : public TR_IlGenerator, public TR_RubyByteCodeIteratorWit
    void handlePendingPushSaveSideEffects(TR::Node *n);
 
    void addExceptionTargets(localset&); 
+
+   valuemap* hash_to_map(TR::StackMemoryRegion&, VALUE);
 
    bool trace_enabled; ///< IlGen Tracing enabled.
 

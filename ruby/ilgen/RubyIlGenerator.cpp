@@ -321,8 +321,7 @@ RubyIlGenerator::generateEntryTargets()
    const localset& targets = computeEntryTargets();
    for (auto iter = targets.begin(); iter != targets.end(); ++iter)
       {
-      if (trace_enabled)
-         traceMsg(comp(), "generating target %d\n", *iter);
+      traceMsg(comp(), "generating target %d\n", *iter);
 
       genTarget(*iter, false);
       }
@@ -466,7 +465,7 @@ RubyIlGenerator::generateEntrySwitch()
    for (auto iter = targets.begin(); iter != targets.end(); ++iter, ++child)
       {
       traceMsg(comp(), "case (%d * %d = %d) -> %d\n", TR_RubyFE::SLOTSIZE, *iter, TR_RubyFE::SLOTSIZE * *iter,  *iter);
-      auto * target = genSwitchTarget(*iter, block);
+      auto * target = genEntrySwitchTarget(*iter, block);
       switchNode->setAndIncChild(child,
                                  TR::Node::createCase(0, target, TR_RubyFE::SLOTSIZE * *iter));
       }
@@ -488,7 +487,7 @@ RubyIlGenerator::generateEntrySwitch()
  * the privatized stack pointer temp.
  */
 TR::TreeTop*
-RubyIlGenerator::genSwitchTarget(int32_t index, TR::Block* insertBlock)
+RubyIlGenerator::genEntrySwitchTarget(int32_t index, TR::Block* insertBlock)
    {
    const char*  debugCounterName = NULL;
    TR::TreeTop* goto_destination = NULL;
@@ -615,8 +614,8 @@ RubyIlGenerator::addExceptionTargets(localset &targets)
 
          if (entry.sp != 0 ) // Not sure how we have to handle a non-zero sp in a catch table entry.
             {
-            TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "compilation_abort/non_zero_sp_catch_table_entry"));
-            fe()->outOfMemory(comp(), "Aborting compilation based on non-zero sp in local catch table entry\n" );
+            logAbort("Not sure how to handle non-zero stack pointer on entry", "non_zero_sp_catch_table_entry");
+            //unreachable. 
             }
 
          //FIXME: This might be excessive -- we probably can filter
@@ -665,7 +664,8 @@ RubyIlGenerator::genILInternal()
    if (enableEntrySwitch)
       generateEntryTargets();
 
-   TR::Block *lastBlock = walker(NULL);
+   // Generate main line control flow.
+   walker();
 
    methodSymbol()->setFirstTreeTop(blocks(0)->getEntry());
 
@@ -695,23 +695,30 @@ RubyIlGenerator::genILInternal()
    return true;
    }
 
-TR::Block *
-RubyIlGenerator::walker(TR::Block *prevBlock)
+void
+RubyIlGenerator::walker()
    {
    int32_t lastIndex = 0, firstIndex = 0;
    TR_ASSERT(_bcIndex == 0, "first bcIndex isn't zero");
 
+   // Generate cont
    indexedWalker(0, firstIndex, lastIndex);
+   TR_ASSERT(firstIndex == 0, "First index wasn't zero. Not sure how to handle this"); 
 
-   // join the basic blocks
+   // Stitch together the blocks and generated the initial control flow graph.
+   //
+   // Initial these to the first block. 
    TR::Block * lastBlock, * nextBlock, * block = blocks(firstIndex);
-   if (firstIndex == 0)
-      cfg()->addEdge(cfg()->getStart(), block);
-   else
-      prevBlock->getExit()->join(block->getEntry());
+  
+    
+   // Add a CFG edge from the start block to the first block.  
+   cfg()->addEdge(cfg()->getStart(), block);
 
-   for (int32_t i = firstIndex; block; lastBlock = block, block = nextBlock)
+   for (int32_t currentIndex = firstIndex; block; block = nextBlock)
       {
+
+      // Walk through the already connected blocks to get to the first 
+      // block with no successor designated. 
       while (block->getNextBlock())
          {
          TR_ASSERT( block->isAdded(), "Block should have already been added\n" );
@@ -720,33 +727,29 @@ RubyIlGenerator::walker(TR::Block *prevBlock)
 
       block->setIsAdded();
 
-      for (nextBlock = 0; !nextBlock && ++i <= lastIndex; )
-         if (isGenerated(i) && blocks(i) && !blocks(i)->isAdded())
-            nextBlock = blocks(i);
+      // Initialize nextBlock to zero 
+      nextBlock = 0; 
 
-      // If an exception range ends with an if and the fall through is
-      // in the main-line code then we have to generate a fall through block
-      // which contains a goto to jump back to the main-line code.
-      //
-      TR::Node * lastRealNode = block->getLastRealTreeTop()->getNode();
-      if (!nextBlock && lastRealNode->getOpCode().isIf())
+      // Figure out the next block: This is looking for the first unadded block in
+      // bytecode order.  
+      // 
+      // If there is no next block, this will cause the outer loop to terminate
+      while (++currentIndex <= lastIndex)
          {
-         nextBlock = TR::Block::createEmptyBlock(comp());
-         i = lastIndex;
-         TR_ASSERT(blocks(i + 3), "can't find the fall thru block");
-         nextBlock->append(TR::TreeTop::create(comp(),
-                                               TR::Node::create(lastRealNode,
-                                                                TR::Goto,
-                                                                0,
-                                                                blocks(i + 3)->getEntry())));
+         if (isGenerated(currentIndex) && blocks(currentIndex) && !blocks(currentIndex)->isAdded())
+            {
+            nextBlock = blocks(currentIndex);
+            break;
+            }
          }
 
-      block->getExit()->getNode()->copyByteCodeInfo(lastRealNode);
+      // Propagate bytecode info from generated node to end node. 
+      TR::Node * lastRealNode = block->getLastRealTreeTop()->getNode();
+      block->getExit()->getNode()->copyByteCodeInfo(lastRealNode); 
+
+      // Connect to CFG -- nextBlock may be zero here, but the CFG is prepared to handle that
       cfg()->insertBefore(block, nextBlock);
       }
-
-   return lastBlock;
-
    }
 
 /**
@@ -763,20 +766,28 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
    _bcIndex = startIndex;
    while (_bcIndex < _maxByteCodeIndex)
       {
+      // This BCindex has a block, and it's not the block we currently 
+      // believe we are in... so we flowed across a control edge
       if (blocks(_bcIndex) && blocks(_bcIndex) != _block)
          {
+         // Generate a goto to correspond to the flowed edge.
          if (isGenerated(_bcIndex))
             _bcIndex = genGoto(_bcIndex);
-         else
+         else // Create a new block. 
             _bcIndex = genBBEndAndBBStart();
+         
+         // We're done generation, time to leave!
          if (_bcIndex >= _maxByteCodeIndex)
             break;
          }
+
+      // Keep track of the low and high for generated bytecodes. 
       if (_bcIndex < firstIndex)
          firstIndex = _bcIndex;
       else if (_bcIndex > lastIndex)
          lastIndex = _bcIndex;
 
+      // We of course only want til ILgen a bytecode once!  
       TR_ASSERT(!isGenerated(_bcIndex), "Walker error");
       setIsGenerated(_bcIndex);
 
@@ -784,8 +795,9 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
       int32_t len  = byteCodeLength(insn);
 
 
-      if (trace_enabled)
-         traceMsg(comp(), "RubyIlGenerator:: Generating block %d into %p\n", _bcIndex, _block);
+      traceMsg(comp(), "RubyIlGenerator:: Generating bytecode %d %s into block %p. Stack height is %d\n", _bcIndex, byteCodeName(insn), _block, _stack->size());
+
+      TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "bytecode_seen/%s", byteCodeName(insn)));
 
       switch (insn)
          {
@@ -903,9 +915,9 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          case BIN(getinlinecache):              _bcIndex = getinlinecache((OFFSET)getOperand(1), (IC) getOperand(2)); break;
          case BIN(setinlinecache):              push(setinlinecache((IC)getOperand(1))); _bcIndex += len; break;
          
-         // case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1)));                                  _bcIndex += len; break;
+         case BIN(putiseq):                     push(putiseq((ISEQ)getOperand(1))); _bcIndex += len; break;
 
-         // BIN(freezestring)
+         case BIN(freezestring): push(freezestring((VALUE)getOperand(1))); _bcIndex += len; break; 
          // BIN(reverse)
          // BIN(checkkeyword)
          // BIN(defineclass)
@@ -914,7 +926,9 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
          // BIN(opt_newarray_min)
          // BIN(branchnil)
          // BIN(once)
-         // BIN(opt_case_dispatch)
+         
+         case BIN(opt_case_dispatch): _bcIndex = genOptCaseDispatch((CDHASH)getOperand(1), (OFFSET)getOperand(2));  break;
+
          // BIN(opt_call_c_function)
          // BIN(bitblt)
 
@@ -958,8 +972,8 @@ RubyIlGenerator::genTreeTop(TR::Node *n, TR::Block* block)
    if (!block)
      block = getCurrentBlock();
 
-   if (trace_enabled)
-      traceMsg(comp(), "Generating Node %p into treetop in block %d (%p)\n", n, block->getNumber(), block);
+   // if (trace_enabled)
+   //    traceMsg(comp(), "Generating Node %p into treetop in block %d (%p)\n", n, block->getNumber(), block);
 
    return TR::Node::genTreeTop(n, block);
    }
@@ -1472,8 +1486,7 @@ RubyIlGenerator::genCall_preparation(CALL_INFO ci, uint32_t numArgs, int32_t& re
       }
 
 
-   if (trace_enabled)
-      traceMsg(comp(), "Creating call at bci=%d\n", _bcIndex);
+   traceMsg(comp(), "Creating call at bci=%d\n", _bcIndex);
 
    TR::Node *recv = NULL;
    if (pending > 0)
@@ -1713,12 +1726,27 @@ RubyIlGenerator::setspecial(rb_num_t key)
          obj);
    }
 
-// TR::Node *
-// RubyIlGenerator::putiseq(ISEQ iseq)
-//    {
-//    TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
-//    return xloadi(_rb_iseq_struct_selfSymRef, iseqNode);
-//    }
+TR::Node *
+RubyIlGenerator::putiseq(ISEQ iseq)
+   {
+   TR::Node *iseqNode = TR::Node::aconst((uintptr_t)iseq);
+   return iseqNode;  
+   }
+
+TR::Node *
+RubyIlGenerator::freezestring(VALUE debugInfo)
+   {
+   TR::Node* str = pop(); 
+   if (!NIL_P(debugInfo)) { 
+      genTreeTop(genCall(RubyHelper_rb_ivar_set, TR::Node::xcallOp(), 3, 
+                       str, 
+                       TR::Node::iconst(id_debug_created_info), 
+                       TR::Node::aconst((uintptr_t)debugInfo)));  
+   }
+   TR::Node* call = genCall(RubyHelper_rb_str_freeze, TR::Node::xcallOp(), 1, str); 
+   genTreeTop(call);
+   return call; 
+   }
 
 TR::Node *
 RubyIlGenerator::putspecialobject(rb_num_t value_type)
@@ -1968,6 +1996,93 @@ RubyIlGenerator::conditionalJump(bool branchIfTrue, int32_t offset)
 
    return findNextByteCodeToGen();
    }
+
+
+static int 
+append_to_map(VALUE key, VALUE value, valuemap* map)
+   {
+   (*map)[key] = value;
+   return ST_CONTINUE;
+   }
+
+
+/**
+ * Given a VALUE that is a Ruby Hash, return the equivalent map. 
+ */
+valuemap*  
+RubyIlGenerator::hash_to_map(TR::StackMemoryRegion& region, VALUE hash) 
+   {
+    valuemap* map = new (region) valuemap(std::less<VALUE>(),
+                    TR::typed_allocator<std::pair<VALUE,VALUE>, TR::RawAllocator>(TR::RawAllocator())); 
+   rb_hash_foreach(hash, (int(*)(...))&append_to_map, (VALUE)map); 
+   return map; 
+   }
+
+/** 
+ * Generates the control flow for opt_case_dispatch. 
+ *
+ * This works by using a helper routine implemented in the VM that computes the 
+ * appropriate destination edge, then using a switch statement; in essence
+ *
+ *     int dest = vm_compute_case_dest(hash, else_offset, key) 
+ *     switch (dest) { 
+ *     ...
+ *     default: fallthrough
+ *     }
+ *
+ * This is implemented this way for two reasons: 
+ * 
+ * 1. It eliminates the need to generate new blocks and control flow during ilgen,
+ *    which will be important for future implementation of OSR, 
+ * 2. It allows a simpler implementation, that is then amenable to future fastpathing
+ *    efforts. 
+ *
+ * The implementation assumes (correctly I believe) that the destination 
+ * hash is immutable and total, covering all legal cases. 
+ */
+int32_t
+RubyIlGenerator::genOptCaseDispatch(CDHASH hash, OFFSET else_offset)  
+      {
+      TR::StackMemoryRegion stackMemoryRegion(*trMemory());
+      auto targets = hash_to_map(stackMemoryRegion, hash); 
+      traceMsg(comp(), "case_dispatch_map {\n"); 
+      for (auto entry : *targets) {
+         traceMsg(comp(), "\t%d -> +%d,\n", entry.first, FIX2INT(entry.second)); 
+      }
+      traceMsg(comp(), "}\n"); 
+
+      TR::Node* key = pop(); 
+      TR::Node* selector = genCall(RubyHelper_vm_compute_case_dest, TR::icall, 3, 
+                                   TR::Node::aconst((uintptr_t)hash), 
+                                   TR::Node::aconst((uintptr_t)else_offset), 
+                                   key); 
+
+      // Default case is to fallthrough to the next bytecode. 
+      TR::Node  * defaultCase      = TR::Node::createCase(0, genTarget(_bcIndex + byteCodeLength(current())) );
+
+
+      TR::Node  * switchNode       = TR::Node::create(TR::lookup, 2 +
+                                                   targets->size(), selector,
+                                                   defaultCase);
+
+      int32_t child = 2;  //First two children are selector and default case.
+      for (auto iter = targets->begin(); iter != targets->end(); ++iter, ++child)
+         {
+         auto targetIndex = FIX2INT(iter->second); 
+         auto bclen       = byteCodeLength(current()); 
+         traceMsg(comp(), "case %d -> (%d + %d + %d= %d)\n", iter->first, bclen, targetIndex , _bcIndex, bclen + targetIndex + _bcIndex);
+
+         // When the JUMP is executed, we've already advanced PC by bclen,
+         // so need to take that into account when computing the destination. 
+         auto * target = genTarget(bclen + targetIndex + _bcIndex);
+
+         switchNode->setAndIncChild(child,
+                                    TR::Node::createCase(0, target, iter->first));
+         }
+
+      genTreeTop(switchNode); 
+      return findNextByteCodeToGen(); 
+      }
 
 int32_t
 RubyIlGenerator::getinlinecache(OFFSET offset, IC ic)

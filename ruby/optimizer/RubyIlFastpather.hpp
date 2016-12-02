@@ -53,8 +53,8 @@ class IlFastpather : public TR::Optimization
 
    virtual int32_t      perform(); 
    virtual bool         shouldPerform() { 
-      static auto * enableFastPath= feGetEnv("OMR_ENABLE_FASTPATH"); 
-      return enableFastPath; 
+      static auto * disableFastPath= feGetEnv("OMR_DISABLE_FASTPATH"); 
+      return !disableFastPath; 
    } 
 
    private: 

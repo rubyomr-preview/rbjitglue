@@ -159,9 +159,9 @@ Ruby::IlFastpather::performOnTreeTop(TR::TreeTop* tt)
             fastpathTrace(tt, node); 
             break; 
 
-         case RubyHelper_vm_opt_plus:
-         case RubyHelper_vm_opt_minus:
-            fastpathPlusMinus(tt, node, refNum == RubyHelper_vm_opt_plus ); 
+         // case RubyHelper_vm_opt_plus:
+         // case RubyHelper_vm_opt_minus:
+         //    fastpathPlusMinus(tt, node, refNum == RubyHelper_vm_opt_plus ); 
             break;
          default:
             return; 
