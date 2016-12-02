@@ -797,6 +797,8 @@ RubyIlGenerator::indexedWalker(int32_t startIndex, int32_t& firstIndex, int32_t&
 
       traceMsg(comp(), "RubyIlGenerator:: Generating bytecode %d %s into block %p. Stack height is %d\n", _bcIndex, byteCodeName(insn), _block, _stack->size());
 
+      TR::DebugCounter::incStaticDebugCounter(comp(), TR::DebugCounter::debugCounterName(comp(), "bytecode_seen/%s", byteCodeName(insn)));
+
       switch (insn)
          {
          case BIN(nop):                         /*nothing */ _bcIndex += len; break;
